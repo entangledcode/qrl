@@ -2,11 +2,11 @@
 
 **A relations-first approach to quantum computing: describe the correlations, derive the predictions.**
 
-*Formerly known as QPL (Quantum Process Language)*
+*Formerly known as QPL (Quantum Process Language) — renamed January 2026 to avoid conflict with Selinger's QPL (2004)*
 
 [![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18292199-blue)](https://doi.org/10.5281/zenodo.18292199)
-[![Tests](https://img.shields.io/badge/Tests-218%20passing-brightgreen)](tests/)
-[![Lines](https://img.shields.io/badge/Code-~6300%20lines-blue)](src/)
+[![Tests](https://img.shields.io/badge/Tests-595%20passing-brightgreen)](tests/)
+[![Lines](https://img.shields.io/badge/Code-~9500%20lines-blue)](src/)
 [![Photonic](https://img.shields.io/badge/Photonic-Verified-purple)](examples/quandela/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/)
@@ -78,8 +78,8 @@ print(f"Measurement result: {result}")
 ## Installation
 
 ```bash
-git clone https://github.com/dcoldeira/quantum-relational-language.git
-cd quantum-relational-language
+git clone https://github.com/entangledcode/qrl.git
+cd qrl
 
 # Create and activate a virtual environment
 python3 -m venv .venv
@@ -144,94 +144,11 @@ S = 2.8200  (limit 2.0)  VIOLATED
 qrl> quit
 ```
 
-## Quantum AI Platform
-
-QRL includes a natural-language platform that lets you ask quantum questions in plain English and get plain-English answers — powered by an LLM that generates QRL code, executes it, and explains the result.
-
-```
-You: "Can Alice and Bob share entanglement over a 200 km network?"
- → LLM generates QRL code
- → QRL executes (network fidelity, channel capacity)
- → LLM explains: "Fidelity is 18% — too low for reliable communication. Shorten the hops."
-```
-
-### Setup
-
-```bash
-pip install -r requirements.txt
-
-# Code generation: install Ollama (https://ollama.com) and pull a model
-ollama pull marco:latest          # or: ollama pull deepseek-coder-v2:16b
-
-# Explanation (optional, better accuracy): set your Anthropic key
-export ANTHROPIC_API_KEY=sk-...
-```
-
-### Web UI
-
-```bash
-PYTHONPATH=src .venv/bin/uvicorn qai.api:app --reload --port 8000
-# Open http://localhost:8000
-```
-
-The UI has five **Quick Start chips** — click one to run a canonical problem instantly:
-
-| Chip | What it does |
-|------|-------------|
-| Bell Inequality Test | CHSH violation — confirms genuine quantum entanglement (S ≈ 2.83) |
-| Quantum Network Fidelity | End-to-end fidelity over a 160 km repeater network |
-| Network Bottleneck Analysis | Identifies which link to upgrade for maximum fidelity gain |
-| Quantum Channel Security | Causal analysis — can Eve at the relay intercept? |
-| Causal Intervention Analysis | Quantum do-calculus — what changes if you reset a node? |
-
-Each result shows the plain-English answer, expandable QRL code, and raw output.
-
-### Terminal CLI
-
-```bash
-PYTHONPATH=src .venv/bin/python -m qai.cli
-# or with Claude for explanations:
-PYTHONPATH=src .venv/bin/python -m qai.cli --explain-claude
-```
-
-```
-❓ Which link is the bottleneck in my 3-node network?
-⏳ Thinking...
-💡 The Alice → Repeater link (150 km) is the bottleneck. Upgrading it would
-   lift end-to-end fidelity from 26% to 56%. The Repeater → Bob link (30 km)
-   has negligible impact.
-```
-
-### Run templates directly (no LLM required)
-
-```bash
-PYTHONPATH=src .venv/bin/python -m qai.templates
-```
-
-Runs all five canonical problems end-to-end and prints results — useful for verifying the QRL layer without a running LLM.
-
-### Photonic hardware
-
-Bell questions are routed to Quandela's photonic hardware (`qpu:belenos`) when a token is available, with automatic fallback to the cloud simulator (`sim:belenos`):
-
-```bash
-export QUANDELA_TOKEN=your_token   # or place in Quandela/QUANDELA.txt
-# Then ask: "Is there Bell inequality violation?" → runs on real photons
-```
-
-### LLM providers
-
-| Provider | Use case | Setup |
-|----------|---------|-------|
-| `OllamaProvider` (default) | Local, free, no API key | `ollama pull marco:latest` |
-| `ClaudeProvider` | Best explanations | `ANTHROPIC_API_KEY=...` |
-| `TogetherAIProvider` | Cloud, no local GPU | `TOGETHER_API_KEY=...` |
-
 ---
 
 ## Implementation Status
 
-**~6,500 lines of code | 218 tests passing | Full photonic pipeline verified**
+**~9,500 lines of code | 595 tests passing | Full photonic pipeline verified**
 
 ### Stage 0-3: Core Language & MBQC Compiler (Complete)
 
@@ -239,7 +156,7 @@ export QUANDELA_TOKEN=your_token   # or place in Quandela/QUANDELA.txt
 |-----------|--------|-------------|
 | QuantumRelation | ✅ | Entanglement as first-class citizen |
 | n-qubit States | ✅ | GHZ states (tested to 5 qubits), W states, Bell pairs |
-| Graph Extraction | ✅ | `extract_graph()` - Relations → cluster state topology |
+| Graph Extraction | ✅ | `extract_graph()` — Relations → cluster state topology |
 | Pattern Generation | ✅ | Bell, GHZ, H/X/Z/S/T gates, CNOT, CZ, rotations |
 | Adaptive Corrections | ✅ | Pauli corrections based on measurement outcomes |
 | Teleportation | ✅ | Full protocol with fidelity = 1.0 |
@@ -261,24 +178,108 @@ Pipeline: QRL Relations → MBQC Pattern ─┬─→ Perceval → Quandela
                                          └─→ PennyLane → Simulation
 ```
 
-**Validated on cloud:** Bell state correlations confirmed on `sim:belenos` (Quandela's 12-qubit photonic platform).
+**Validated on hardware:** Bell state confirmed on `qpu:belenos` (Quandela's photonic QPU) — 423/1000 shots yielded valid dual-rail events (42.3% yield), 57.7% HOM-bunched as expected from linear optics.
+
+### Stage 5: Domain Modules (Complete)
+
+QRL includes domain-specific modules that apply relational quantum mechanics to real scientific problems.
+
+#### `qrl.physics` — Foundational Layer
+
+The physics primitives everything else builds on. Hardware-verified S = 2.61 ± 0.08 on `qpu:belenos`.
+
+```python
+from qrl.physics import BellTest, GHZTest
+
+test = BellTest()
+print(test.compare(trials=2000))
+# S parameter: Theory 2.8284, Observed 2.8340 — VIOLATED
+```
+
+| Module | Description |
+|--------|-------------|
+| `qrl.physics.bell` | CHSH inequality, BellTest |
+| `qrl.physics.ghz` | GHZ paradox, Mermin inequality |
+
+#### `qrl.domains.biology` — Quantum Biology
+
+```python
+from qrl.domains.biology import fmo_complex, QuantumBioNetwork
+
+fmo = fmo_complex()  # Fenna-Matthews-Olson complex
+network = QuantumBioNetwork(fmo)
+print(network.coherence_lifetime())
+```
+
+| Function | Description |
+|----------|-------------|
+| `fmo_complex()` | FMO photosynthesis complex (7-site) |
+| `RadicalPair` | Avian magnetoreception model |
+| `lindblad_evolve()` | Lindblad master equation evolution |
+| `decoherence_rate()`, `coherence_lifetime()` | Environmental noise metrics |
+| `phonon_bath()` | Vibrational environment coupling |
+| `ENAQT` | Environment-Assisted Quantum Transport |
+
+#### `qrl.domains.sensing` — Quantum Sensing
+
+```python
+from qrl.domains.sensing import QuantumSensor, heisenberg_limit, ramsey_interferometry
+
+sensor = QuantumSensor(n_qubits=10)
+print(f"Fisher info: {sensor.quantum_fisher_information():.4f}")
+print(f"Heisenberg limit: {heisenberg_limit(10):.6f}")
+print(f"Advantage: {sensor.quantum_advantage_factor():.2f}x")
+```
+
+| Function | Description |
+|----------|-------------|
+| `QuantumSensor` | Entanglement-enhanced sensor |
+| `quantum_fisher_information()` | QFI for parameter estimation |
+| `cramer_rao_bound()` | Quantum Cramér-Rao bound |
+| `heisenberg_limit()` | 1/N scaling limit |
+| `ramsey_interferometry()` | Ramsey protocol simulation |
+| `mach_zehnder()` | Mach-Zehnder interferometer |
+| `spin_squeezing()` | Spin-squeezed state sensing |
+| `atomic_clock_stability()` | Allan deviation model |
+
+#### `qrl.domains.chemistry` — Quantum Chemistry
+
+```python
+from qrl.domains.chemistry import hydrogen, MolecularSystem
+
+mol = hydrogen(bond_length=0.74)
+print(f"HF energy:  {mol.hf_energy:.4f} Ha")
+print(f"FCI energy: {mol.fci_energy:.4f} Ha")
+print(f"Correlation energy: {mol.correlation_energy:.4f} Ha")
+```
+
+| Function | Description |
+|----------|-------------|
+| `hydrogen()` | H₂ molecule (STO-3G, full VQE) |
+| `helium_hydride_cation()` | HeH⁺ (first molecule in universe) |
+| `MolecularSystem` | General molecular Hamiltonian |
+| `jordan_wigner_hamiltonian()` | Fermion-to-qubit mapping |
+| `vqe_energy()` | Variational Quantum Eigensolver |
+
+H₂ benchmark: E_HF = −1.1167 Ha, E_FCI = −1.1373 Ha; entanglement reaches 2 bits at dissociation.
+
+---
 
 ### Validation
 
 ```bash
-# Run all tests
 python -m pytest tests/ -v
 ```
 
-- **218 tests passing**
+- **595 tests passing**
 - **Bell correlations** verified (CHSH violation S = 2.83)
 - **GHZ paradox** demonstrated (Mermin inequality M = 4, classical limit 2)
 - **Teleportation fidelity = 1.0**
-- **Photonic pipeline** validated locally and on cloud
+- **Photonic pipeline** validated locally and on `qpu:belenos`
+
+---
 
 ## MBQC Compilation Pipeline
-
-QRL implements the complete MBQC compilation pipeline:
 
 ```python
 from qrl import QRLProgram
@@ -300,13 +301,15 @@ graph = extract_graph(ghz)
 
 # 3. Generate measurement pattern
 pattern = generate_pattern_from_relation(ghz)
-# Returns: MeasurementPattern with preparation, entanglement, measurements, corrections
 
 # 4. Teleportation with adaptive corrections
+import numpy as np
 input_state = np.array([0.6, 0.8])  # |ψ⟩ = 0.6|0⟩ + 0.8|1⟩
 output, outcomes, corrections = simulate_teleportation(input_state)
 # Fidelity = 1.0 (perfect teleportation)
 ```
+
+---
 
 ## Key Features
 
@@ -340,10 +343,12 @@ pattern = generate_teleportation_pattern()
 # Automatically includes X/Z corrections conditioned on Bell measurement results
 ```
 
+---
+
 ## Project Structure
 
 ```
-quantum-relational-language/
+qrl/
 ├── src/qrl/
 │   ├── cli.py               # CLI entry point (qrl command)
 │   ├── core.py              # QuantumRelation, QuantumQuestion, Perspective
@@ -351,44 +356,31 @@ quantum-relational-language/
 │   ├── tensor_utils.py      # n-qubit tensor operations
 │   ├── causal.py            # CPTPMap, QuantumSwitch, QuantumCausalDAG, do-calculus
 │   ├── mbqc/                # MBQC compiler
-│   │   ├── graph_extraction.py      # Relations → graphs
-│   │   ├── pattern_generation.py    # Graphs → measurement patterns
-│   │   ├── adaptive_corrections.py  # Pauli corrections, teleportation
-│   │   └── measurement_pattern.py   # MeasurementPattern dataclass
+│   │   ├── graph_extraction.py
+│   │   ├── pattern_generation.py
+│   │   ├── adaptive_corrections.py
+│   │   └── measurement_pattern.py
 │   ├── backends/            # Hardware backends
-│   │   ├── pennylane_adapter.py     # QRL → PennyLane
-│   │   ├── perceval_path_adapter.py # QRL → Perceval (path-encoded)
-│   │   └── graphix_adapter.py       # QRL → graphix
-│   ├── domains/
-│   │   └── networks.py      # QuantumNetwork domain module
-│   └── physics/
+│   │   ├── pennylane_adapter.py
+│   │   ├── perceval_path_adapter.py
+│   │   └── graphix_adapter.py
+│   ├── domains/             # Scientific domain modules
+│   │   ├── biology.py       # FMO, RadicalPair, ENAQT
+│   │   ├── sensing.py       # QuantumSensor, Ramsey, Fisher info
+│   │   ├── chemistry.py     # H₂, HeH⁺, VQE, Jordan-Wigner
+│   │   └── networks.py      # QuantumNetwork, repeaters
+│   └── physics/             # Foundational layer
 │       ├── bell.py          # CHSH inequality, BellTest
 │       └── ghz.py           # GHZ paradox, Mermin inequality
-├── qai/                     # Quantum AI platform
-│   ├── api.py               # FastAPI server (GET /templates, POST /ask)
-│   ├── loop.py              # QuantumAILoop: question → QRL → result → answer
-│   ├── executor.py          # Safe QRL code execution sandbox
-│   ├── providers.py         # OllamaProvider, ClaudeProvider, TogetherAIProvider
-│   ├── hardware.py          # hardware_bell_test() → Quandela qpu:belenos
-│   ├── templates.py         # Five canonical problem templates
-│   ├── cli.py               # Interactive terminal CLI
-│   └── static/index.html    # Web UI
-├── tests/                   # 544 tests
+├── tests/                   # 595 tests
 ├── examples/
-│   ├── pennylane/           # PennyLane backend examples
-│   └── quandela/            # Photonic cloud examples
-├── requirements.txt         # Core platform dependencies
-├── requirements-photonic.txt# Perceval, graphix, PennyLane (optional)
-└── papers/                  # QPL 2026 paper
+│   ├── pennylane/
+│   └── quandela/
+├── docs/
+└── requirements.txt
 ```
 
-## Documentation
-
-- **[Tutorial Book](https://dcoldeira.github.io/qrl-book/)** - Comprehensive guide to QRL concepts and usage
-- **[Technical Blog](https://dcoldeira.github.io/)** - Development journey, deep dives, and research notes
-- **[Published Paper](https://doi.org/10.5281/zenodo.18292199)** - "QRL: A Relations-First Programming Language for Measurement-Based Quantum Computing" (Zenodo, January 2026)
-- **[Photonic Examples](examples/quandela/)** - Working examples for Quandela Cloud integration
-- **[PennyLane Examples](examples/pennylane/)** - Cross-platform MBQC via PennyLane
+---
 
 ## Research Direction
 
@@ -402,89 +394,57 @@ QRL explores whether a **relations-first formalism**—where correlations are pr
 
 ### Theoretical Foundations
 
-QRL's approach connects to foundational physics:
-
 | Concept | Connection to QRL |
 |---------|-------------------|
 | **Relational QM** (Rovelli) | Properties exist only relative to other systems—QRL models this directly |
 | **Bell's Theorem** | Correlations without local hidden variables—relations ARE the reality |
 | **MBQC** (Raussendorf-Briegel) | Computation via measurements on entangled states—natural fit for relations |
 
-### Current Focus: `qrl-physics`
-
-We're building a physics library to explore these questions empirically:
-- **Bell inequalities** (CHSH) - Express violations relationally ✅ (33 tests)
-- **GHZ paradox & Mermin inequality** - Logical demonstration of non-locality ✅ (55 tests)
-- **Full pipeline demos** - Relations → MBQC → photonic hardware → results ✅ (interactive demo)
-
-**The goal:** Investigate whether the relational perspective reveals insights that traditional approaches miss.
-
 #### Example: Bell Test in QRL
 
 ```python
 from qrl.physics import BellTest
 
-# The relational approach: describe correlations, derive predictions
 test = BellTest()
-
-# What does quantum mechanics predict for this relation?
 print(test.predict())
 # -> Predicted CHSH parameter: S = 2.8284
 # -> Classical limit: 2.0
-# -> Prediction: Bell inequality WILL be violated
 
-# Run the test and compare theory to observation
 print(test.compare(trials=2000))
 # -> S parameter: Theory 2.8284, Observed 2.8340
 # -> Violated: YES
-
-# The Bell relation exhibits correlations that
-# cannot be explained by local hidden variables.
 ```
-
-This is the QRL philosophy in action: we didn't program a Bell test circuit—we described the correlations, and the violation emerged.
 
 #### Running the Interactive Demo
 
-Try the full `qrl-physics` demonstration:
-
 ```bash
-# Full interactive demo (5 sections, ~5 minutes)
-qrl run demo
-
-# Quick mode (fewer trials, ~1 minute)
-qrl run demo --quick
-
-# Run specific section
+qrl run demo          # Full demo (~5 minutes)
+qrl run demo --quick  # Quick mode (~1 minute)
 qrl run demo --section 3  # GHZ paradox only
 ```
 
-The demo showcases:
-1. **Relations First** - Creating Bell and GHZ relations
-2. **Bell Test** - CHSH inequality violation (S ≈ 2.83)
-3. **GHZ Test** - GHZ paradox and Mermin inequality (M = 4)
-4. **MBQC Pipeline** - Compilation from relations to measurement patterns
-5. **Photonic Execution** - Full QRL → Perceval → Quandela pipeline
+---
 
-### Open Questions
+## Documentation
 
-1. Does relational framing make Bell/GHZ physics clearer than circuit simulation?
-2. What patterns emerge when you specify correlations directly?
-3. Can we find examples where QRL reveals something non-obvious about the physics?
+- **[Technical Blog](https://dcoldeira.github.io/)** — Development journey, deep dives, research notes
+- **[Published Paper](https://doi.org/10.5281/zenodo.18292199)** — "QRL: A Relations-First Programming Language for Measurement-Based Quantum Computing" (Zenodo, January 2026)
+- **[Photonic Examples](examples/quandela/)** — Working examples for Quandela Cloud integration
+- **[PennyLane Examples](examples/pennylane/)** — Cross-platform MBQC via PennyLane
 
-## Related Projects
+## Related
 
-### [Quantum Advantage Advisor](https://github.com/dcoldeira/quantum-advantage-advisor)
-Reality-check tool that tells you whether quantum computing makes sense for your problem. Evidence-based, no hype.
+- **[Bell Platform](https://entangledcode.dev)** — Natural-language QRL interface (web app) built on top of this library
+- **[Quantum Advantage Advisor](https://github.com/dcoldeira/quantum-advantage-advisor)** — Reality-check tool for quantum computing applicability
 
 ## Contributing
 
 QRL is an active research project exploring relations-first quantum computing. Contributions welcome from researchers interested in:
 
-- **Foundations of quantum mechanics** - Relational QM, Bell inequalities, contextuality
-- **MBQC theory and compilation** - Measurement patterns, graph states, flow conditions
-- **Photonic quantum computing** - Linear optics, path encoding, Perceval/Quandela
-- **Quantum programming languages** - Type systems, compilation, formal verification
+- **Foundations of quantum mechanics** — Relational QM, Bell inequalities, contextuality
+- **MBQC theory and compilation** — Measurement patterns, graph states, flow conditions
+- **Photonic quantum computing** — Linear optics, path encoding, Perceval/Quandela
+- **Quantum programming languages** — Type systems, compilation, formal verification
 
 ## Contact
 
@@ -492,7 +452,8 @@ QRL is an active research project exploring relations-first quantum computing. C
 - Email: dcoldeira@gmail.com
 - GitHub: [@dcoldeira](https://github.com/dcoldeira)
 - Blog: [dcoldeira.github.io](https://dcoldeira.github.io)
+- Platform: [entangledcode.dev](https://entangledcode.dev)
 
 ## License
 
-MIT License - see [LICENSE](LICENSE)
+MIT License — see [LICENSE](LICENSE)

@@ -6,7 +6,7 @@
 
 [![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18292199-blue)](https://doi.org/10.5281/zenodo.18292199)
 [![Tests](https://img.shields.io/badge/Tests-595%20passing-brightgreen)](tests/)
-[![Lines](https://img.shields.io/badge/Code-~9500%20lines-blue)](src/)
+[![Lines](https://img.shields.io/badge/Code-~11700%20lines-blue)](src/)
 [![Photonic](https://img.shields.io/badge/Photonic-Verified-purple)](examples/quandela/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/)
@@ -148,7 +148,7 @@ qrl> quit
 
 ## Implementation Status
 
-**~9,500 lines of code | 595 tests passing | Full photonic pipeline verified**
+**~11,700 lines of code | 595 tests passing | Full photonic pipeline verified**
 
 ### Stage 0-3: Core Language & MBQC Compiler (Complete)
 

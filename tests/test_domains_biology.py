@@ -6,6 +6,7 @@ import pytest
 from qrl.domains.biology import (
     QuantumBioNetwork,
     RadicalPair,
+    basis_transform,
     coherence_lifetime,
     decoherence_rate,
     dipole_coupling,
@@ -479,3 +480,82 @@ class TestFieldSensitivity:
         pair = RadicalPair().set_field(50.0, theta_deg=45.0)
         pair.field_sensitivity(delta_theta_deg=2.0)
         assert pair._theta_deg == pytest.approx(45.0)
+
+
+# ------------------------------------------------------------------ #
+# Basis transformation                                                #
+# ------------------------------------------------------------------ #
+
+class TestBasisTransform:
+    def test_unitary_preserves_trace(self):
+        rho = np.zeros((3, 3), dtype=complex)
+        rho[0, 0] = 1.0
+        H = np.array([[1, 2, 0], [2, 3, 1], [0, 1, 2]], dtype=float)
+        _, U = np.linalg.eigh(H)
+        rho2 = basis_transform(rho, U)
+        assert np.real(np.trace(rho2)) == pytest.approx(1.0, abs=1e-10)
+
+    def test_round_trip(self):
+        rho = np.array([[0.7, 0.1 + 0.1j], [0.1 - 0.1j, 0.3]], dtype=complex)
+        H = np.array([[1.0, 0.5], [0.5, 2.0]])
+        _, U = np.linalg.eigh(H)
+        rho2 = basis_transform(rho, U)
+        rho_back = basis_transform(rho2, U.conj().T)
+        assert np.allclose(rho, rho_back, atol=1e-10)
+
+    def test_identity_transform(self):
+        rho = np.eye(3, dtype=complex) / 3
+        rho2 = basis_transform(rho, np.eye(3, dtype=complex))
+        assert np.allclose(rho, rho2)
+
+
+class TestQuantumBioNetworkBasisTransform:
+    def test_hamiltonian_is_hermitian(self):
+        net = _two_site_net()
+        H = net.hamiltonian()
+        assert np.allclose(H, H.conj().T)
+
+    def test_exciton_energies_sorted(self):
+        net = _two_site_net()
+        e = net.exciton_energies()
+        assert e[0] <= e[1]
+
+    def test_exciton_energies_count(self):
+        fmo = fmo_complex()
+        e = fmo.exciton_energies()
+        assert len(e) == 7
+
+    def test_exciton_states_unitary(self):
+        net = _two_site_net()
+        U = net.exciton_states()
+        assert np.allclose(U.conj().T @ U, np.eye(2), atol=1e-10)
+
+    def test_to_exciton_basis_trace_preserved(self):
+        fmo = fmo_complex()
+        rho = np.zeros((7, 7), dtype=complex)
+        rho[0, 0] = 1.0
+        rho_exc = fmo.to_exciton_basis(rho)
+        assert np.real(np.trace(rho_exc)) == pytest.approx(1.0, abs=1e-10)
+
+    def test_to_exciton_basis_positive_semidefinite(self):
+        fmo = fmo_complex()
+        rho = np.zeros((7, 7), dtype=complex)
+        rho[0, 0] = 1.0
+        rho_exc = fmo.to_exciton_basis(rho)
+        eigs = np.linalg.eigvalsh(rho_exc)
+        assert np.all(eigs >= -1e-10)
+
+    def test_site_exciton_round_trip(self):
+        fmo = fmo_complex()
+        rho = np.zeros((7, 7), dtype=complex)
+        rho[0, 0] = 1.0
+        rho_back = fmo.to_site_basis(fmo.to_exciton_basis(rho))
+        assert np.allclose(rho, rho_back, atol=1e-10)
+
+    def test_exciton_populations_sum_to_one(self):
+        fmo = fmo_complex()
+        rho = np.zeros((7, 7), dtype=complex)
+        rho[0, 0] = 1.0
+        rho_exc = fmo.to_exciton_basis(rho)
+        pops = np.real(np.diag(rho_exc))
+        assert pops.sum() == pytest.approx(1.0, abs=1e-10)

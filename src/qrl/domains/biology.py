@@ -213,6 +213,26 @@ def coherence_lifetime(
     return float(times[-1])
 
 
+def basis_transform(rho: np.ndarray, U: np.ndarray) -> np.ndarray:
+    """Transform a density matrix to a new basis.
+
+    Given a unitary U whose columns are the new basis vectors expressed in the
+    old basis, the transformed density matrix is:
+
+        ρ' = U† ρ U
+
+    Parameters
+    ----------
+    rho : density matrix in the original basis (d×d)
+    U   : unitary transformation matrix (d×d); columns are new basis vectors
+
+    Returns
+    -------
+    Density matrix in the new basis (d×d)
+    """
+    return U.conj().T @ rho @ U
+
+
 def dipole_coupling(J_cm: float, i: int, j: int, n_sites: int) -> np.ndarray:
     """Coupling Hamiltonian H = J(|i⟩⟨j| + |j⟩⟨i|) in cm⁻¹.
 
@@ -597,6 +617,62 @@ class QuantumBioNetwork:
         if eta_c < 1e-12:
             return float("inf") if eta_q > 0 else 1.0
         return eta_q / eta_c
+
+    # ---------------------------------------------------------------- #
+    # Basis transformation                                              #
+    # ---------------------------------------------------------------- #
+
+    def hamiltonian(self) -> np.ndarray:
+        """Return the system Hamiltonian in cm⁻¹ (site basis)."""
+        return self._hamiltonian()
+
+    def exciton_energies(self) -> np.ndarray:
+        """Eigenvalues of H — exciton energies in cm⁻¹, sorted ascending.
+
+        These are the energy levels of the delocalized exciton states.
+        For FMO, each eigenvalue corresponds to one collective exciton band.
+        """
+        energies, _ = np.linalg.eigh(self._hamiltonian())
+        return energies
+
+    def exciton_states(self) -> np.ndarray:
+        """Transformation matrix U from site basis to exciton basis.
+
+        Columns of U are the exciton eigenstates expressed in the site basis.
+        U is unitary: U†U = I.
+
+        To transform a site-basis operator O to exciton basis: O' = U† O U
+        To transform back: O = U O' U†
+        """
+        _, U = np.linalg.eigh(self._hamiltonian())
+        return U
+
+    def to_exciton_basis(self, rho: np.ndarray) -> np.ndarray:
+        """Transform density matrix from site basis to exciton basis.
+
+        Parameters
+        ----------
+        rho : density matrix in site basis (n_sites × n_sites)
+
+        Returns
+        -------
+        Density matrix in exciton basis (n_sites × n_sites)
+        """
+        return basis_transform(rho, self.exciton_states())
+
+    def to_site_basis(self, rho_exciton: np.ndarray) -> np.ndarray:
+        """Transform density matrix from exciton basis back to site basis.
+
+        Parameters
+        ----------
+        rho_exciton : density matrix in exciton basis (n_sites × n_sites)
+
+        Returns
+        -------
+        Density matrix in site basis (n_sites × n_sites)
+        """
+        U = self.exciton_states()
+        return U @ rho_exciton @ U.conj().T
 
     def __repr__(self) -> str:
         return (

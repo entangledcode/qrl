@@ -302,6 +302,7 @@ class CHSHResult:
     quantum_maximum: float = 2 * np.sqrt(2)
     angles: Dict[str, Tuple[float, float]] = None
     trials_per_setting: int = 1000
+    stat_note: str = ""
 
     @property
     def violates(self) -> bool:
@@ -396,12 +397,24 @@ def chsh_test(
     # Determine if violated
     violated = S > 2.0
 
+    tsirelson = 2.0 * np.sqrt(2)
+    se = 2.0 / np.sqrt(trials)
+    # Only flag if S exceeds the Tsirelson bound by more than 2 standard errors —
+    # smaller exceedances are routine Monte Carlo fluctuations around the exact bound.
+    stat_note = (
+        f"S={S:.4f} exceeds the Tsirelson bound (2√2 ≈ {tsirelson:.4f}) by more than "
+        f"2× the sampling error (SE ≈ {se:.4f} with {trials} trials/setting). "
+        f"This is a statistical artefact — no quantum system can exceed the Tsirelson bound. "
+        f"The theoretical maximum for an ideal Bell state is exactly 2√2."
+    ) if S > tsirelson + 2 * se else ""
+
     result = CHSHResult(
         S=S,
         correlations=correlations,
         violated=violated,
         angles=angles,
-        trials_per_setting=trials
+        trials_per_setting=trials,
+        stat_note=stat_note,
     )
 
     if verbose:

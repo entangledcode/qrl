@@ -431,6 +431,70 @@ def chsh_test(
 
 
 # =============================================================================
+# Noisy CHSH
+# =============================================================================
+
+def chsh_noisy(p: float) -> dict:
+    """
+    Compute CHSH S parameter for a Bell state after a single-qubit depolarising channel.
+
+    Applying Φ(ρ) = (1−p)ρ + p·I/2 to one qubit of |Φ+⟩ produces a Werner state
+    with visibility v = 1−p.  The optimal CHSH value is then:
+
+        S(p) = 2√2 · (1 − p)
+
+    This is exact — no Monte Carlo sampling required.
+
+    Args:
+        p: Depolarising probability, 0 ≤ p ≤ 1.
+           p=0 → ideal Bell state (S = 2√2 ≈ 2.828)
+           p=1 → fully mixed (S = 0, no violation)
+
+    Returns:
+        dict with keys: p, S, violated, classical_bound, quantum_max
+
+    Example:
+        >>> result = chsh_noisy(0.3)
+        >>> print(result["S"])   # ≈ 1.980 — below classical bound
+    """
+    if not (0.0 <= p <= 1.0):
+        raise ValueError(f"p must be in [0, 1], got {p}")
+    S = 2.0 * np.sqrt(2) * (1.0 - p)
+    return {
+        "p": p,
+        "S": round(S, 6),
+        "violated": S > 2.0,
+        "classical_bound": 2.0,
+        "quantum_max": round(2.0 * np.sqrt(2), 6),
+        "note": "Exact analytical result for Werner state with visibility v=1-p.",
+    }
+
+
+def chsh_vs_noise(p_values=None) -> list:
+    """
+    Compute CHSH S as a function of depolarising noise for a Bell state.
+
+    Args:
+        p_values: List of noise probabilities to evaluate.
+                  Defaults to [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0].
+
+    Returns:
+        List of dicts, each with keys: p, S, violated.
+
+    Example:
+        >>> sweep = chsh_vs_noise()
+        >>> for r in sweep:
+        ...     print(f"p={r['p']:.1f}  S={r['S']:.4f}  violated={r['violated']}")
+    """
+    if p_values is None:
+        p_values = [round(i * 0.1, 1) for i in range(11)]
+    return [
+        {"p": p, "S": round(2.0 * np.sqrt(2) * (1.0 - p), 6), "violated": 2.0 * np.sqrt(2) * (1.0 - p) > 2.0}
+        for p in p_values
+    ]
+
+
+# =============================================================================
 # High-Level Relational API
 # =============================================================================
 

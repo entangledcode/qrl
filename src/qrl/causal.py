@@ -354,6 +354,65 @@ def from_unitary(
     )
 
 
+def definite_order_process(
+    order: str = 'AB',
+    d: int = 2,
+) -> 'ProcessMatrix':
+    """
+    Construct the process matrix for a definite causal order (A→B or B→A).
+
+    For order='AB' (A signals to B), the process matrix is:
+
+        W_AB = I_{A_I} ⊗ |Φ+⟩⟨Φ+|_{A_O, B_I} ⊗ I_{B_O} / d_{A_I}
+
+    normalised so Tr[W] = d_{A_O} × d_{B_O} = d².
+
+    This is the canonical causally ordered process from OCB (2012):
+    A acts first and can signal to B, but B cannot signal to A.
+    It is always causally separable (P_win ≤ 3/4).
+
+    Args:
+        order: 'AB' for A→B (default) or 'BA' for B→A.
+        d:     Qubit dimension per party (default 2).
+
+    Returns:
+        ProcessMatrix for the specified definite causal order.
+
+    References:
+        Oreshkov, Costa, Brukner (2012), equation (1).
+    """
+    if order not in ('AB', 'BA'):
+        raise ValueError("order must be 'AB' or 'BA'")
+
+    # |Φ+⟩ = (1/√d) Σ_i |ii⟩  ∈  H_{A_O} ⊗ H_{B_I}
+    phi = np.zeros(d * d, dtype=complex)
+    for i in range(d):
+        phi[i * d + i] = 1.0 / np.sqrt(d)
+    link = np.outer(phi, phi.conj())  # shape (d², d²)
+
+    # W_AB = I_{A_I}/d ⊗ link_{A_O B_I} ⊗ I_{B_O}
+    # total dim = d_AI * d_AO * d_BI * d_BO = d^4
+    W = np.kron(np.kron(np.eye(d, dtype=complex) / d, link), np.eye(d, dtype=complex))
+    # Normalise: Tr[W] should equal d_AO * d_BO = d²
+    current_trace = np.trace(W).real
+    W = W * (d ** 2 / current_trace)
+
+    if order == 'AB':
+        parties = ['A', 'B']
+        desc = "Definite causal order A→B (A signals to B)"
+    else:
+        parties = ['B', 'A']
+        desc = "Definite causal order B→A (B signals to A)"
+
+    return ProcessMatrix(
+        W=W,
+        parties=parties,
+        input_dims=[d, d],
+        output_dims=[d, d],
+        description=desc,
+    )
+
+
 # ================================================================== #
 #  Gap 2 — CPTPMap                                                    #
 # ================================================================== #
@@ -1097,6 +1156,41 @@ class QuantumSwitch:
             f"unitary={self.is_unitary()}, "
             f"P_win={p_win:.3f}){desc}"
         )
+
+
+def quantum_switch_process_matrix(d: int = 2) -> 'ProcessMatrix':
+    """
+    Construct the process matrix of the quantum switch.
+
+    Uses identity channels (U_A = U_B = I_d) as the local operations —
+    the causal non-separability of the switch is a property of the process
+    itself, independent of which unitaries A and B implement.
+
+    The resulting ProcessMatrix verifies:
+        W.is_valid()            → True
+        W.is_causally_separable() → False
+        W.causal_inequality_value() → (2 + √2) / 4 ≈ 0.854
+
+    NOTE: The parties here are the 'A' and 'C' (target + control) spaces
+    of the switch isometry, not the OCB A/B parties.  To compare with the
+    OCB causal game score, use QuantumSwitch.causal_inequality_value()
+    which returns the analytical value (2+√2)/4 directly.
+
+    Args:
+        d: Target space dimension (default 2 for qubits).
+
+    Returns:
+        ProcessMatrix for the quantum switch.
+
+    References:
+        Oreshkov, Costa, Brukner (2012), equation (5).
+    """
+    I_d = np.eye(d, dtype=complex)
+    channel_A = CPTPMap(kraus_ops=[I_d], input_dim=d, output_dim=d, description="Identity")
+    channel_B = CPTPMap(kraus_ops=[I_d], input_dim=d, output_dim=d, description="Identity")
+    sw = QuantumSwitch(channel_A=channel_A, channel_B=channel_B,
+                       description="Quantum switch (identity ops)")
+    return sw.process_matrix()
 
 
 # ======================================================================== #

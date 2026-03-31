@@ -25,6 +25,10 @@ References:
     Barrett, Lorenz, Oreshkov (2019). Quantum causal models.
     arXiv:1906.10726.
 
+    Araújo, Branciard, Costa, Feix, Giarmatzi, Brukner (2015). Witnessing
+    causal nonseparability. New Journal of Physics, 17, 102001.
+    arXiv:1506.03776.
+
 Author: David Coldeira (dcoldeira@gmail.com)
 License: MIT
 """
@@ -253,6 +257,155 @@ class ProcessMatrix:
         return float(np.clip(p_win, 0.0, 1.0))
 
     # ------------------------------------------------------------------ #
+    # Araújo et al. (2015) — Causal order structure and witness           #
+    # ------------------------------------------------------------------ #
+
+    def is_causally_ordered_AB(self, tol: float = 1e-10) -> bool:
+        """
+        Test the A≺B structural condition (first party acts before second).
+
+        W is in the A≺B causal subspace iff:
+
+            Φ_{A≺B}(W) = W,   i.e.   Tr_{party1_O}[W] ⊗ I_{party1_O}/d = W
+
+        Intuitively: party1's output carries no causal influence back to party1's
+        input from party2 — party1 effectively acts first.
+
+        Only implemented for 2-party qubit processes (input_dims = output_dims = [2, 2]).
+
+        Returns:
+            True if W ∈ A≺B subspace, False otherwise or not applicable.
+
+        References:
+            Araújo et al. (2015), arXiv:1506.03776, Lemma 1.
+        """
+        if len(self.parties) != 2 or self.input_dims != [2, 2] or self.output_dims != [2, 2]:
+            return False
+        return bool(np.allclose(self.W, _causal_project_AB(self.W), atol=tol))
+
+    def is_causally_ordered_BA(self, tol: float = 1e-10) -> bool:
+        """
+        Test the B≺A structural condition (second party acts before first).
+
+        W is in the B≺A causal subspace iff:
+
+            Φ_{B≺A}(W) = W,   i.e.   Tr_{party0_O}[W] ⊗ I_{party0_O}/d = W
+
+        Only implemented for 2-party qubit processes (input_dims = output_dims = [2, 2]).
+
+        Returns:
+            True if W ∈ B≺A subspace, False otherwise or not applicable.
+
+        References:
+            Araújo et al. (2015), arXiv:1506.03776, Lemma 1.
+        """
+        if len(self.parties) != 2 or self.input_dims != [2, 2] or self.output_dims != [2, 2]:
+            return False
+        return bool(np.allclose(self.W, _causal_project_BA(self.W), atol=tol))
+
+    def project_to_AB_order(self) -> 'ProcessMatrix':
+        """
+        Project W onto the A≺B causal subspace.
+
+        Returns Φ_{A≺B}(W) = Tr_{party1_O}[W] ⊗ I_{party1_O}/d as a new
+        ProcessMatrix.  If W is already A≺B-ordered the result equals W.
+
+        Note: the projection preserves trace but may not be PSD.
+
+        Only for 2-party qubit processes (input_dims = output_dims = [2, 2]).
+
+        Raises:
+            ValueError: if not a 2-party qubit process.
+
+        References:
+            Araújo et al. (2015), arXiv:1506.03776, Section II.
+        """
+        if len(self.parties) != 2 or self.input_dims != [2, 2] or self.output_dims != [2, 2]:
+            raise ValueError(
+                "project_to_AB_order requires a 2-party qubit process "
+                "(input_dims = output_dims = [2, 2])"
+            )
+        return ProcessMatrix(
+            W=_causal_project_AB(self.W),
+            parties=self.parties,
+            input_dims=self.input_dims,
+            output_dims=self.output_dims,
+            description=f"A≺B projection of [{self.description}]",
+        )
+
+    def project_to_BA_order(self) -> 'ProcessMatrix':
+        """
+        Project W onto the B≺A causal subspace.
+
+        Returns Φ_{B≺A}(W) = Tr_{party0_O}[W] ⊗ I_{party0_O}/d.
+
+        Only for 2-party qubit processes (input_dims = output_dims = [2, 2]).
+
+        Raises:
+            ValueError: if not a 2-party qubit process.
+
+        References:
+            Araújo et al. (2015), arXiv:1506.03776, Section II.
+        """
+        if len(self.parties) != 2 or self.input_dims != [2, 2] or self.output_dims != [2, 2]:
+            raise ValueError(
+                "project_to_BA_order requires a 2-party qubit process "
+                "(input_dims = output_dims = [2, 2])"
+            )
+        return ProcessMatrix(
+            W=_causal_project_BA(self.W),
+            parties=self.parties,
+            input_dims=self.input_dims,
+            output_dims=self.output_dims,
+            description=f"B≺A projection of [{self.description}]",
+        )
+
+    def witness_value(self, Omega: np.ndarray) -> float:
+        """
+        Evaluate a causal nonseparability witness on this process.
+
+        Computes Tr[Ω · W].  When Ω is a valid causal nonseparability witness:
+            Tr[Ω · W] ≥ 0  for all causally separable W
+            Tr[Ω · W] < 0  certifies causal nonseparability
+
+        Args:
+            Omega: Hermitian witness operator of the same shape as self.W.
+
+        Returns:
+            Real scalar Tr[Ω · W].
+
+        References:
+            Araújo et al. (2015), arXiv:1506.03776, Section III.
+        """
+        return float(np.trace(Omega @ self.W).real)
+
+    def causal_nonseparability_robustness(self) -> Optional[float]:
+        """
+        Causal nonseparability robustness (OCB-based).
+
+        The robustness r*(W) is the minimum noise fraction needed to render W
+        causally separable under mixing with the maximally mixed process:
+
+            (W + r* · I_{d^4}/d^2) / (1 + r*)  ∈  causally separable
+
+        Derived from the OCB causal inequality:
+
+            r*(W) = max(0,  4 · (P_win(W) − 3/4))
+
+        Returns:
+            r* ≥ 0.  Zero means W is already causally separable.
+            For the quantum switch: r* = √2 − 1 ≈ 0.414.
+            None if causal_inequality_value() is not applicable.
+
+        References:
+            Araújo et al. (2015), arXiv:1506.03776, Section IV.
+        """
+        p_win = self.causal_inequality_value()
+        if p_win is None:
+            return None
+        return float(max(0.0, 4.0 * (p_win - 0.75)))
+
+    # ------------------------------------------------------------------ #
     # Utility                                                              #
     # ------------------------------------------------------------------ #
 
@@ -423,6 +576,130 @@ def definite_order_process(
         output_dims=[d, d],
         description=desc,
     )
+
+
+# ======================================================================== #
+# Araújo et al. (2015) — Causal order projections and witnesses            #
+#                                                                            #
+# References:                                                                #
+#   Araújo, Branciard, Costa, Feix, Giarmatzi, Brukner (2015).             #
+#   Witnessing causal nonseparability. New Journal of Physics, 17, 102001.  #
+#   arXiv:1506.03776.                                                        #
+# ======================================================================== #
+
+def _causal_project_AB(W: np.ndarray, d: int = 2) -> np.ndarray:
+    """
+    Project process matrix W onto the A≺B causal subspace.
+
+    For a 2-party process in H_{AI} ⊗ H_{AO} ⊗ H_{BI} ⊗ H_{BO}:
+
+        Φ_{A≺B}(W) = Tr_{BO}[W] ⊗ I_{BO}/d
+
+    W is A≺B-ordered iff Φ_{A≺B}(W) = W (second party's output carries
+    no causal influence back).
+
+    Args:
+        W: Square process matrix of shape (d^4, d^4).
+        d: Local Hilbert space dimension (default 2).
+
+    Returns:
+        Projected matrix, same shape as W.
+
+    References:
+        Araújo et al. (2015), arXiv:1506.03776, Lemma 1.
+    """
+    W_r = W.reshape([d] * 8)                                     # (AI,AO,BI,BO, AI',AO',BI',BO')
+    W_tr = np.einsum('abcxefgx->abcefg', W_r)                    # trace over BO (axes 3, 7)
+    W_proj = np.einsum('abcefg,dh->abcdefgh', W_tr, np.eye(d) / d)
+    return W_proj.reshape(d**4, d**4)
+
+
+def _causal_project_BA(W: np.ndarray, d: int = 2) -> np.ndarray:
+    """
+    Project process matrix W onto the B≺A causal subspace.
+
+    For a 2-party process in H_{AI} ⊗ H_{AO} ⊗ H_{BI} ⊗ H_{BO}:
+
+        Φ_{B≺A}(W) = Tr_{AO}[W] ⊗ I_{AO}/d
+
+    W is B≺A-ordered iff Φ_{B≺A}(W) = W (first party's output carries
+    no causal influence back).
+
+    Args:
+        W: Square process matrix of shape (d^4, d^4).
+        d: Local Hilbert space dimension (default 2).
+
+    Returns:
+        Projected matrix, same shape as W.
+
+    References:
+        Araújo et al. (2015), arXiv:1506.03776, Lemma 1.
+    """
+    W_r = W.reshape([d] * 8)                                     # (AI,AO,BI,BO, AI',AO',BI',BO')
+    W_tr = np.einsum('axbcdxef->abcdef', W_r)                    # trace over AO (axes 1, 5)
+    W_proj = np.einsum('abcdef,gh->agbcdhef', W_tr, np.eye(d) / d)
+    return W_proj.reshape(d**4, d**4)
+
+
+def causal_nonseparability_witness(d: int = 2) -> np.ndarray:
+    """
+    Construct the causal nonseparability witness for 2-party qubit processes.
+
+    Returns a Hermitian operator Ω of shape (d^4, d^4) such that:
+
+        Tr[Ω · W] ≥ 0   for all causally separable W  (P_win ≤ 3/4)
+        Tr[Ω · W] < 0   certifies causal nonseparability
+
+    The witness is built from the OCB causal game score operator S:
+
+        Ω = (3/4) · I_{d^4} − S
+
+    Verification:
+        Causally separable W (Tr[W]=4, P_win ≤ 3/4):
+            Tr[Ω·W] = 3 − 4·P_win ≥ 0  ✓
+        Quantum switch (P_win = (2+√2)/4 ≈ 0.854):
+            Tr[Ω·W] = 3 − (2+√2) = 1−√2 ≈ −0.414  ✓
+
+    Args:
+        d: Qubit dimension per party (default 2).
+
+    Returns:
+        Hermitian ndarray of shape (d^4, d^4).
+
+    Raises:
+        NotImplementedError: if d ≠ 2.
+
+    References:
+        Araújo et al. (2015), arXiv:1506.03776, Section III.
+        Oreshkov, Costa, Brukner (2012) — causal game score operator.
+    """
+    if d != 2:
+        raise NotImplementedError(
+            "causal_nonseparability_witness only implemented for d=2 (qubits)"
+        )
+    zero  = np.array([1.0, 0.0])
+    one   = np.array([0.0, 1.0])
+    plus  = np.array([1.0,  1.0]) / np.sqrt(2)
+    minus = np.array([1.0, -1.0]) / np.sqrt(2)
+    I2    = np.eye(2)
+
+    J = {}
+    J[(0, 0)] = np.kron(np.outer(zero, zero), np.outer(zero, zero))
+    J[(0, 1)] = np.kron(np.outer(one,  one),  np.outer(one,  one))
+    J[(1, 0)] = np.kron(I2, np.outer(plus,  plus))  / 2.0
+    J[(1, 1)] = np.kron(I2, np.outer(minus, minus)) / 2.0
+
+    winning = [
+        (0, 0, 0, 0), (0, 0, 1, 1),
+        (0, 1, 0, 0), (0, 1, 1, 1),
+        (1, 0, 0, 0), (1, 0, 1, 1),
+        (1, 1, 0, 1), (1, 1, 1, 0),
+    ]
+    S = np.zeros((d**4, d**4), dtype=complex)
+    for x, y, a, b in winning:
+        S += np.kron(J[(x, a)], J[(y, b)])
+
+    return (3.0 / 4.0) * np.eye(d**4, dtype=complex) - S
 
 
 # ================================================================== #

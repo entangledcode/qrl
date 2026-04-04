@@ -2457,3 +2457,370 @@ class QuantumCausalDAG:
         return (
             f"QuantumCausalDAG({n_nodes} nodes, {n_edges} edges){desc}"
         )
+
+
+# ======================================================================== #
+# Allen et al. (2017) — Quantum Common Causes and Quantum Causal Models    #
+#                                                                            #
+# Reference: J.-M. A. Allen, J. Barrett, D. C. Horsman, C. M. Lee,        #
+#            R. W. Spekkens, PRX 7, 031021 (2017)                          #
+# ======================================================================== #
+
+
+@dataclass
+class QuantumCommonCause:
+    """Quantum common cause Λ: C → A⊗B (Allen et al. 2017).
+
+    A quantum common cause between systems A and B is a CPTP map from a
+    latent system C to the joint output A⊗B.  This generalises the
+    classical Reichenbach common cause principle to quantum theory.
+
+    Classical common causes correspond to channels whose output is always
+    a separable state; the maximally entangled Bell pair is the archetype
+    of a quantum common cause that produces entangled outputs.
+
+    Key theorem (Allen et al. 2017, Thm 1): every bipartite state ρ_AB
+    can be realised as the output of a quantum common cause.
+
+    Parameters
+    ----------
+    channel     : CPTPMap with input_dim=dim_c, output_dim=dim_a*dim_b
+    dim_a       : output dimension of subsystem A
+    dim_b       : output dimension of subsystem B
+    description : optional label
+    """
+
+    channel: CPTPMap
+    dim_a: int
+    dim_b: int
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        expected = self.dim_a * self.dim_b
+        if self.channel.output_dim != expected:
+            raise ValueError(
+                f"channel.output_dim={self.channel.output_dim} "
+                f"!= dim_a*dim_b={expected}"
+            )
+
+    @property
+    def dim_c(self) -> int:
+        """Dimension of the latent common-cause system C."""
+        return self.channel.input_dim
+
+    def joint_state(self, rho_c: np.ndarray) -> np.ndarray:
+        """Compute ρ_AB = Λ(ρ_C).
+
+        Parameters
+        ----------
+        rho_c : density matrix of C, shape (dim_c, dim_c)
+
+        Returns
+        -------
+        Joint state ρ_AB of shape (dim_a*dim_b, dim_a*dim_b).
+        """
+        return self.channel.apply(np.asarray(rho_c, dtype=complex))
+
+    def mutual_information(self, rho_c: np.ndarray) -> float:
+        """I(A:B) in the joint state Λ(ρ_C), in bits."""
+        return quantum_mutual_information(
+            self.joint_state(rho_c), self.dim_a, self.dim_b
+        )
+
+    def entanglement_negativity(
+        self, rho_c: "Optional[np.ndarray]" = None
+    ) -> float:
+        """Entanglement negativity N(ρ_AB) = (‖ρ_AB^{Γ_B}‖₁ − 1) / 2.
+
+        If rho_c is None the maximally mixed state I/d_C is used.
+        Positive negativity certifies a quantum (entangled) common cause.
+        """
+        if rho_c is None:
+            rho_c = np.eye(self.dim_c, dtype=complex) / self.dim_c
+        return _entanglement_negativity(
+            self.joint_state(rho_c), self.dim_a, self.dim_b
+        )
+
+    def is_entangled_cause(
+        self,
+        rho_c: "Optional[np.ndarray]" = None,
+        atol: float = 1e-8,
+    ) -> bool:
+        """True if the common cause produces entanglement (negativity > 0)."""
+        return self.entanglement_negativity(rho_c) > atol
+
+    def __repr__(self) -> str:
+        desc = f" — {self.description}" if self.description else ""
+        return (
+            f"QuantumCommonCause("
+            f"dim_c={self.dim_c}, dim_a={self.dim_a}, dim_b={self.dim_b})"
+            f"{desc}"
+        )
+
+
+def _entanglement_negativity(
+    rho_ab: np.ndarray,
+    dim_a: int,
+    dim_b: int,
+) -> float:
+    """Entanglement negativity via partial transpose (Peres–Horodecki).
+
+    N(ρ) = sum of absolute values of negative eigenvalues of ρ^{Γ_B}.
+    Positive N certifies entanglement (necessary and sufficient for
+    2×2 and 2×3 systems).
+    """
+    rho = np.asarray(rho_ab, dtype=complex)
+    rho_t = rho.reshape(dim_a, dim_b, dim_a, dim_b)
+    rho_pt = rho_t.transpose(0, 3, 2, 1).reshape(dim_a * dim_b, dim_a * dim_b)
+    eigvals = np.linalg.eigvalsh(rho_pt)
+    return float(-np.sum(eigvals[eigvals < 0]))
+
+
+# ---- factory functions --------------------------------------------------- #
+
+def bell_common_cause(d: int = 2) -> QuantumCommonCause:
+    """Maximally entangled quantum common cause: C(dim=1) → A⊗B.
+
+    The channel outputs the maximally entangled state
+        |Φ+⟩ = (1/√d) Σ_i |i,i⟩
+    regardless of the trivial (1-dimensional) input.
+
+    This is the canonical quantum common cause — it cannot be explained
+    by any classical common cause model.
+    """
+    phi_plus = np.zeros(d * d, dtype=complex)
+    for i in range(d):
+        phi_plus[i * d + i] = 1.0 / np.sqrt(d)
+    K = phi_plus.reshape(d * d, 1)
+    channel = CPTPMap(
+        kraus_ops=[K],
+        input_dim=1,
+        output_dim=d * d,
+        description=f"Bell state preparation (d={d})",
+    )
+    return QuantumCommonCause(
+        channel=channel,
+        dim_a=d,
+        dim_b=d,
+        description=f"Maximally entangled common cause (d={d})",
+    )
+
+
+def classically_correlated_cause(d: int = 2) -> QuantumCommonCause:
+    """Classical common cause: Λ(|c⟩⟨c|) = |c⟩⟨c|_A ⊗ |c⟩⟨c|_B.
+
+    Copies the classical value of C into both A and B.  For the
+    maximally mixed input, the output is (1/d) Σ_c |cc⟩⟨cc| — a
+    classically correlated (separable) state with zero negativity.
+
+    This is the quantum analogue of Reichenbach's classical common cause:
+    it explains correlations without entanglement.
+    """
+    kraus = []
+    for c in range(d):
+        K = np.zeros((d * d, d), dtype=complex)
+        K[c * d + c, c] = 1.0
+        kraus.append(K)
+    channel = CPTPMap(
+        kraus_ops=kraus,
+        input_dim=d,
+        output_dim=d * d,
+        description=f"Classical copy channel (d={d})",
+    )
+    return QuantumCommonCause(
+        channel=channel,
+        dim_a=d,
+        dim_b=d,
+        description=f"Classical common cause (d={d})",
+    )
+
+
+# ---- Quantum Markov Condition -------------------------------------------- #
+
+def quantum_markov_condition(
+    dag: "QuantumCausalDAG",
+    rho_joint: np.ndarray,
+    node_order: "List[str]",
+    atol: float = 1e-8,
+) -> bool:
+    """Check whether ρ_joint satisfies the Quantum Markov Condition for dag.
+
+    The QMC holds for a DAG G iff for every node X:
+
+        I(X : NonDesc(X) \\ Pa(X) | Pa(X)) = 0
+
+    in the joint state ρ.  This is equivalent to saying ρ can be generated
+    by applying CPTP maps node-by-node following the causal order of G
+    (Allen et al. 2017, Theorem 2).
+
+    Parameters
+    ----------
+    dag        : QuantumCausalDAG encoding the causal structure
+    rho_joint  : joint density matrix over all nodes ordered by node_order
+    node_order : node names in topological order; the tensor product
+                 structure of rho_joint must match this ordering
+    atol       : tolerance for the zero CMI comparison
+
+    Returns
+    -------
+    bool — True if the QMC holds for all nodes
+    """
+    dims = [dag._graph.nodes[n]["dim"] for n in node_order]
+    D = int(np.prod(dims))
+    rho = np.asarray(rho_joint, dtype=complex)
+    if rho.shape != (D, D):
+        raise ValueError(
+            f"rho_joint shape {rho.shape} inconsistent with "
+            f"node dims {list(zip(node_order, dims))}"
+        )
+
+    n = len(node_order)
+    for i, node in enumerate(node_order):
+        pa_names   = set(dag.parents(node))
+        desc_names = dag.descendants(node)
+
+        pa_idx = sorted(node_order.index(p) for p in pa_names)
+        z_names = [
+            node_order[j] for j in range(n)
+            if j != i
+            and node_order[j] not in pa_names
+            and node_order[j] not in desc_names
+        ]
+        if not z_names:
+            continue
+
+        z_idx    = sorted(node_order.index(z) for z in z_names)
+        xpa_idx  = sorted([i] + pa_idx)
+        paz_idx  = sorted(pa_idx + z_idx)
+        xpaz_idx = sorted([i] + pa_idx + z_idx)
+
+        rho_xpa  = _partial_trace_multipartite(rho, keep=xpa_idx,  dims=dims)
+        rho_paz  = _partial_trace_multipartite(rho, keep=paz_idx,  dims=dims)
+        rho_xpaz = _partial_trace_multipartite(rho, keep=xpaz_idx, dims=dims)
+        rho_pa   = (
+            _partial_trace_multipartite(rho, keep=pa_idx, dims=dims)
+            if pa_idx
+            else np.array([[1.0 + 0j]])
+        )
+
+        cmi = (
+            vonneumann_entropy(rho_xpa)
+            + vonneumann_entropy(rho_paz)
+            - vonneumann_entropy(rho_xpaz)
+            - vonneumann_entropy(rho_pa)
+        )
+        if abs(cmi) > atol:
+            return False
+
+    return True
+
+
+# ---- canonical examples -------------------------------------------------- #
+
+def teleportation_causal_model(
+    psi: np.ndarray,
+) -> "dict[str, object]":
+    """Quantum teleportation as a causal model (Allen et al. 2017, §V).
+
+    Causal structure
+    ----------------
+    Λ: () → (A2, B)         Bell pair — quantum common cause
+    M: (ψ_in, A2) → M       Alice's Bell measurement (4 outcomes)
+    B_out: (M, B) → B_out   Bob's Pauli correction
+
+    For any input qubit ψ, the output B_out = ψ with unit fidelity,
+    demonstrating that teleportation is powered by an entangled quantum
+    common cause.
+
+    Parameters
+    ----------
+    psi : input qubit state — 1-D ket (length 2) or density matrix (2×2)
+
+    Returns
+    -------
+    dict with keys:
+        'output'   : np.ndarray — Bob's output state (2×2)
+        'fidelity' : float — state fidelity with the input
+        'cause'    : QuantumCommonCause — Bell pair source
+    """
+    psi = np.asarray(psi, dtype=complex)
+    rho_in = np.outer(psi, psi.conj()) if psi.ndim == 1 else psi
+
+    cause   = bell_common_cause(d=2)
+    rho_A2B = cause.joint_state(np.array([[1.0 + 0j]]))
+    rho_3   = np.kron(rho_in, rho_A2B)  # (ψ_in ⊗ A2 ⊗ B), shape (8,8)
+
+    bell_vecs = [
+        np.array([1,  0, 0,  1], dtype=complex) / np.sqrt(2),  # |Φ+⟩
+        np.array([1,  0, 0, -1], dtype=complex) / np.sqrt(2),  # |Φ-⟩
+        np.array([0,  1, 1,  0], dtype=complex) / np.sqrt(2),  # |Ψ+⟩
+        np.array([0,  1, -1, 0], dtype=complex) / np.sqrt(2),  # |Ψ-⟩
+    ]
+    I2 = np.eye(2, dtype=complex)
+    X  = np.array([[0, 1], [1, 0]], dtype=complex)
+    Z  = np.array([[1, 0], [0, -1]], dtype=complex)
+    corrections = [I2, Z, X, X @ Z]
+
+    rho_out = np.zeros((2, 2), dtype=complex)
+    for bvec, U in zip(bell_vecs, corrections):
+        # Kraus: ⟨bell_k|_{ψ,A2} ⊗ U_B — shape (2, 8)
+        K = np.kron(bvec.conj().reshape(1, 4), U)
+        rho_out += K @ rho_3 @ K.conj().T
+
+    fidelity = float(np.real(np.trace(rho_in @ rho_out)))
+    return {"output": rho_out, "fidelity": fidelity, "cause": cause}
+
+
+def entanglement_swapping_causal_model() -> "dict[str, object]":
+    """Entanglement swapping as a causal model (Allen et al. 2017, §V).
+
+    Two independent Bell pairs share no common ancestor.  A Bell
+    measurement on the middle particles (B, C) creates entanglement
+    between the outer particles (A, D) — which have never interacted.
+
+    Causal structure
+    ----------------
+    Λ_1: () → (A, B)   first Bell pair (quantum common cause)
+    Λ_2: () → (C, D)   second Bell pair (quantum common cause)
+    M: (B, C) → M      Bell measurement on middle particles
+    D_out: (M, D) → D_out  Pauli correction on D
+    Result: A and D_out are maximally entangled
+
+    Returns
+    -------
+    dict with keys:
+        'output'     : np.ndarray — joint state ρ_AD (4×4)
+        'negativity' : float — entanglement negativity of ρ_AD
+        'cause_AB'   : QuantumCommonCause
+        'cause_CD'   : QuantumCommonCause
+    """
+    cause_AB = bell_common_cause(d=2)
+    cause_CD = bell_common_cause(d=2)
+
+    rho_AB   = cause_AB.joint_state(np.array([[1.0 + 0j]]))
+    rho_CD   = cause_CD.joint_state(np.array([[1.0 + 0j]]))
+    rho_ABCD = np.kron(rho_AB, rho_CD)  # shape (16, 16)
+
+    bell_vecs = [
+        np.array([1,  0, 0,  1], dtype=complex) / np.sqrt(2),
+        np.array([1,  0, 0, -1], dtype=complex) / np.sqrt(2),
+        np.array([0,  1, 1,  0], dtype=complex) / np.sqrt(2),
+        np.array([0,  1, -1, 0], dtype=complex) / np.sqrt(2),
+    ]
+    I2 = np.eye(2, dtype=complex)
+    X  = np.array([[0, 1], [1, 0]], dtype=complex)
+    Z  = np.array([[1, 0], [0, -1]], dtype=complex)
+    corrections = [I2, Z, X, X @ Z]
+
+    rho_AD = np.zeros((4, 4), dtype=complex)
+    for bvec, U in zip(bell_vecs, corrections):
+        # Kraus: I_A ⊗ ⟨bell_k|_{BC} ⊗ U_D — shape (4, 16)
+        K = np.kron(np.kron(I2, bvec.conj().reshape(1, 4)), U)
+        rho_AD += K @ rho_ABCD @ K.conj().T
+
+    return {
+        "output": rho_AD,
+        "negativity": _entanglement_negativity(rho_AD, 2, 2),
+        "cause_AB": cause_AB,
+        "cause_CD": cause_CD,
+    }

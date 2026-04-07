@@ -29,6 +29,24 @@ from .bell import (
     BellTest,
 )
 
+from .hensen import (
+    # Detection loophole
+    detection_loophole_threshold,
+    effective_chsh_loophole_free,
+    detection_efficiency_sweep,
+    # Heralded entanglement
+    heralded_bell_pair,
+    chsh_heralded,
+    fidelity_threshold_chsh,
+    # Statistical significance
+    bell_p_value,
+    trials_needed,
+    # High-level
+    loophole_free_bell_test,
+    hensen_experimental_params,
+    HensenResult,
+)
+
 from .demo import run_demo, main as demo_main
 
 from .ghz import (
@@ -66,6 +84,19 @@ __all__ = [
     # Demo
     'run_demo',
     'demo_main',
+
+    # Hensen module
+    'detection_loophole_threshold',
+    'effective_chsh_loophole_free',
+    'detection_efficiency_sweep',
+    'heralded_bell_pair',
+    'chsh_heralded',
+    'fidelity_threshold_chsh',
+    'bell_p_value',
+    'trials_needed',
+    'loophole_free_bell_test',
+    'hensen_experimental_params',
+    'HensenResult',
 
     # Bell module
     'bell_correlation',

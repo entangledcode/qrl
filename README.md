@@ -5,8 +5,8 @@
 *Formerly known as QPL (Quantum Process Language) — renamed January 2026 to avoid conflict with Selinger's QPL (2004)*
 
 [![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18292199-blue)](https://doi.org/10.5281/zenodo.18292199)
-[![Tests](https://img.shields.io/badge/Tests-595%20passing-brightgreen)](tests/)
-[![Lines](https://img.shields.io/badge/Code-~11700%20lines-blue)](src/)
+[![Tests](https://img.shields.io/badge/Tests-838%20passing-brightgreen)](tests/)
+[![Lines](https://img.shields.io/badge/Code-~12900%20lines-blue)](src/)
 [![Photonic](https://img.shields.io/badge/Photonic-Verified-purple)](examples/quandela/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/)
@@ -148,7 +148,7 @@ qrl> quit
 
 ## Implementation Status
 
-**~11,700 lines of code | 595 tests passing | Full photonic pipeline verified**
+**~12,900 lines of code | 838 tests passing | Full photonic pipeline verified**
 
 ### Stage 0-3: Core Language & MBQC Compiler (Complete)
 
@@ -198,8 +198,9 @@ print(test.compare(trials=2000))
 
 | Module | Description |
 |--------|-------------|
-| `qrl.physics.bell` | CHSH inequality, BellTest |
+| `qrl.physics.bell` | CHSH inequality, BellTest, noisy Werner states |
 | `qrl.physics.ghz` | GHZ paradox, Mermin inequality |
+| `qrl.physics.hensen` | Loophole-free Bell test — detection loophole, heralded entanglement, p-value |
 
 #### `qrl.domains.biology` — Quantum Biology
 
@@ -263,6 +264,31 @@ print(f"Correlation energy: {mol.correlation_energy:.4f} Ha")
 
 H₂ benchmark: E_HF = −1.1167 Ha, E_FCI = −1.1373 Ha; entanglement reaches 2 bits at dissociation.
 
+#### `qrl.causal` — Quantum Causal Structure
+
+```python
+from qrl.causal import ProcessMatrix, QuantumSwitch, QuantumCausalDAG
+from qrl.causal import quantum_switch_process_matrix, QuantumCommonCause
+
+# Quantum switch — indefinite causal order
+W = quantum_switch_process_matrix()
+pm = ProcessMatrix(W)
+print(f"Causal nonseparable: {not pm.is_causally_separable()}")
+
+# Common cause structure (Allen et al. 2017)
+rho = QuantumCommonCause(n=2).state()
+```
+
+| Class / Function | Description |
+|-----------------|-------------|
+| `ProcessMatrix` | Process matrix formalism (Oreshkov, Costa, Brukner 2012) |
+| `CPTPMap` | Completely positive trace-preserving maps |
+| `QuantumSwitch` | Indefinite causal order |
+| `QuantumCausalDAG` | Quantum causal directed acyclic graphs |
+| `QuantumMarkovChain` | Quantum Markov chains |
+| `QuantumCommonCause` | Common cause structure (Allen et al. 2017) |
+| `causal_nonseparability_witness()` | Araújo et al. (2015) witness, robustness |
+
 ---
 
 ### Validation
@@ -271,10 +297,12 @@ H₂ benchmark: E_HF = −1.1167 Ha, E_FCI = −1.1373 Ha; entanglement reaches 
 python -m pytest tests/ -v
 ```
 
-- **595 tests passing**
-- **Bell correlations** verified (CHSH violation S = 2.83)
+- **838 tests passing** (17 skipped)
+- **Bell correlations** verified (CHSH violation S = 2.83; hardware S = 2.61 ± 0.08)
+- **Loophole-free Bell test** modelled (Hensen et al. 2015 — η_crit, heralded state, p-value)
 - **GHZ paradox** demonstrated (Mermin inequality M = 4, classical limit 2)
 - **Teleportation fidelity = 1.0**
+- **Causal structure** — process matrices, quantum switch, causal witnesses
 - **Photonic pipeline** validated locally and on `qpu:belenos`
 
 ---
@@ -354,7 +382,7 @@ qrl/
 │   ├── core.py              # QuantumRelation, QuantumQuestion, Perspective
 │   ├── measurement.py       # Measurement and basis transformations
 │   ├── tensor_utils.py      # n-qubit tensor operations
-│   ├── causal.py            # CPTPMap, QuantumSwitch, QuantumCausalDAG, do-calculus
+│   ├── causal.py            # ProcessMatrix, CPTPMap, QuantumSwitch, QuantumCausalDAG, QuantumMarkovChain, QuantumCommonCause
 │   ├── mbqc/                # MBQC compiler
 │   │   ├── graph_extraction.py
 │   │   ├── pattern_generation.py
@@ -370,9 +398,10 @@ qrl/
 │   │   ├── chemistry.py     # H₂, HeH⁺, VQE, Jordan-Wigner
 │   │   └── networks.py      # QuantumNetwork, repeaters
 │   └── physics/             # Foundational layer
-│       ├── bell.py          # CHSH inequality, BellTest
-│       └── ghz.py           # GHZ paradox, Mermin inequality
-├── tests/                   # 595 tests
+│       ├── bell.py          # CHSH inequality, BellTest, noisy Werner states
+│       ├── ghz.py           # GHZ paradox, Mermin inequality
+│       └── hensen.py        # Loophole-free Bell test (Hensen et al. 2015)
+├── tests/                   # 838 tests
 ├── examples/
 │   ├── pennylane/
 │   └── quandela/

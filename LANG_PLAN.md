@@ -86,8 +86,10 @@ Key checks:
 - [x] CLI `check` / `parse`  (`src/qrl/cli.py`)
 - [x] example programs — `examples/lang/{bell,switch,switch_rejected}.qrl`
 - [x] grammar reference — `docs/surface-syntax.md`
-- [ ] paper: update Limitations + add a syntax figure + contributions bullet
-      — DRAFTED, awaiting go-ahead (reopens "paper is done" from May 12)
+- [x] paper: §2.5 "Concrete syntax" subsection + Figure 1 (switch accepted /
+      switch_rejected rejected); abstract clause; 5th contributions bullet;
+      implementation sentence; §6 "Execution of surface programs"; §7 conclusion.
+      Compiles clean, 10 pages, zero warnings.
 - [ ] interp.py (lowering onto `qrl.core` / `qrl.causal`) — stretch, not required
       for resubmission
 

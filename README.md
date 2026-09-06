@@ -121,6 +121,10 @@ qrl compile ghz --target graphix    # Compile to graphix pattern
 qrl cloud status                    # Check platform availability
 qrl cloud run bell                  # Run on Quandela sim:belenos
 
+# Surface language
+qrl check examples/lang/switch.qrl  # Type-check a .qrl program
+qrl parse examples/lang/bell.qrl    # Dump its AST
+
 # Tools
 qrl info                            # Version, dependencies, source stats
 qrl shell                           # Interactive REPL

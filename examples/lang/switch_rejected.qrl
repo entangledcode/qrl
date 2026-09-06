@@ -1,0 +1,13 @@
+-- This program is REJECTED by the type checker, and that rejection is the
+-- point of the causal type hierarchy.
+--
+-- K is a genuine CPTP map (an amplitude-damping-style channel given by two
+-- Kraus operators) but it is NOT unitary, so it types as Proc(2, 2), not
+-- UniProc(2).  Rule T-Switch requires UniProc(d): a switch over a non-unitary
+-- channel reduces to an incoherent classical mixture of causal orders, which
+-- is causally separable and must not inhabit Switch(d).
+--
+--   qrl check examples/lang/switch_rejected.qrl   ->   type error (expected)
+
+let K = cptp([[1, 0], [0, 0.70710678]], [[0, 0.70710678], [0, 0]]) in
+switch(K, K, |+>)

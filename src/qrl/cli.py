@@ -6,6 +6,8 @@ Usage:
     qrl run ghz [--shots N] [--qubits N] [--verbose]
     qrl run demo [--quick] [--section N]
     qrl compile bell|ghz [--target T] [-o FILE]
+    qrl check FILE.qrl
+    qrl parse FILE.qrl
     qrl inspect graph|pattern|circuit bell|ghz
     qrl cloud status
     qrl cloud run bell|ghz [--platform P]
@@ -446,6 +448,41 @@ def cmd_help(args: argparse.Namespace) -> None:
     print(f"  quit                                      Exit the shell")
 
 
+def _read_source(path: str) -> str:
+    if path == "-":
+        return sys.stdin.read()
+    with open(path, "r", encoding="utf-8") as fh:
+        return fh.read()
+
+
+def cmd_check(args: argparse.Namespace) -> None:
+    from qrl.lang import parse as _parse, check as _check
+    from qrl.lang.errors import QRLError
+
+    src = _read_source(args.file)
+    try:
+        ty = _check(_parse(src))
+    except QRLError as e:
+        print(str(e.with_source(src)), file=sys.stderr)
+        sys.exit(1)
+    label = args.file if args.file != "-" else "<stdin>"
+    print(f"{_green('ok')}  {label} : {ty}")
+
+
+def cmd_parse(args: argparse.Namespace) -> None:
+    import pprint
+    from qrl.lang import parse as _parse
+    from qrl.lang.errors import QRLError
+
+    src = _read_source(args.file)
+    try:
+        tree = _parse(src)
+    except QRLError as e:
+        print(str(e.with_source(src)), file=sys.stderr)
+        sys.exit(1)
+    pprint.pp(tree)
+
+
 def cmd_info(args: argparse.Namespace) -> None:
     import qrl
 
@@ -812,6 +849,12 @@ def build_parser() -> argparse.ArgumentParser:
     cloud_run_p.add_argument("--platform", default="sim:belenos")
     cloud_run_p.add_argument("--shots", type=int, default=1000)
 
+    # -- check / parse (surface language) --
+    check_p = sub.add_parser("check", help="Type-check a .qrl source file")
+    check_p.add_argument("file", help="Path to a .qrl source file ('-' for stdin)")
+    parse_p = sub.add_parser("parse", help="Parse a .qrl source file and dump its AST")
+    parse_p.add_argument("file", help="Path to a .qrl source file ('-' for stdin)")
+
     # -- info --
     sub.add_parser("info", help="Show version, dependencies, and stats")
 
@@ -866,6 +909,12 @@ def main(argv: Optional[list] = None) -> None:
             cmd_cloud_status(args)
         elif args.cloud_command == "run":
             cmd_cloud_run(args)
+
+    elif args.command == "check":
+        cmd_check(args)
+
+    elif args.command == "parse":
+        cmd_parse(args)
 
     elif args.command == "info":
         cmd_info(args)

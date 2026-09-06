@@ -1,0 +1,9 @@
+-- A Bell relation, then a measurement.
+-- entangle is a *declaration*: it names which subsystems are correlated,
+-- not a constructor applied to input states.
+--
+--   qrl check examples/lang/bell.qrl   ->   ok  : (Outcome * Rel(2))
+
+let a = |0> in
+let b = |0> in
+ask(entangle(a, b), Z)

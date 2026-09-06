@@ -1,0 +1,11 @@
+-- The quantum switch: the canonical causally nonseparable process.
+--
+-- Both operations are unitary (X and Z), so switch(...) type-checks as
+-- Switch(2).  By the Soundness Theorem (quantum-causal-structure.tex,
+-- Theorem 1) its denotation lies in CNS_{2,2}: it is causally nonseparable.
+--
+--   qrl check examples/lang/switch.qrl   ->   ok  : Switch(2)
+
+let X : UniProc(2) = cptp([[0, 1], [1, 0]]) in
+let Z : UniProc(2) = cptp([[1, 0], [0, -1]]) in
+switch(X, Z, |+>)

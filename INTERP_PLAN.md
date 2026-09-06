@@ -86,8 +86,13 @@ source span.
   NOTE for session D: the paper's §3 listing calls `sw.causal_game_advantage()`
   and `W.causal_nonseparability_robustness()` — the first method name does not
   exist (`causal_inequality_value()` does). Fix the listing in session D.
-- **C — remaining causal.** `PM`, `DAG`, `Do`, `E-Switch-Incoherent`. Wire to
-  `ProcessMatrix` / `QuantumCausalDAG`. Tests per node.
+- **C — remaining causal. DONE (Sept 6 2026).** `PM` (→ `Process` from raw W,
+  parties A..; dims [d]*n), `DAG` (→ `Dag`; node dims inferred from Φ matrices;
+  **single-parent nodes only**, multi-parent raises a runtime error), `Do`
+  (intervene, propagate, sample Z-basis outcome on the unique sink).
+  `E-Switch-Incoherent` deliberately skipped — unreachable from well-typed
+  surface programs. `examples/lang/causal_dag.qrl` added. 6 new tests
+  (84 lang tests total). Every term form now evaluates.
 - **D — polish + paper.** `qrl exec -` from stdin already works. Runtime error
   messages with carets (done for session A; extend to B/C). Update `docs/surface-syntax.md`
   ("Not yet covered" section shrinks). Paper edits: §6 remove the "execution of

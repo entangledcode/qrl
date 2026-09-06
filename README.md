@@ -125,6 +125,7 @@ qrl cloud run bell                  # Run on Quandela sim:belenos
 qrl check examples/lang/switch.qrl  # Type-check a .qrl program
 qrl parse examples/lang/bell.qrl    # Dump its AST
 qrl exec  examples/lang/bell.qrl --shots 1000   # Type-check and run
+qrl exec  examples/lang/switch.qrl              # -> Process(2x2, P_win=0.8536, robustness=0.4142)
 
 # Tools
 qrl info                            # Version, dependencies, source stats

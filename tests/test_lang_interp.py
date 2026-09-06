@@ -160,12 +160,54 @@ def test_switch_is_causally_nonseparable():
     assert v.robustness > 0  # r* > 0  <=>  causally nonseparable
 
 
-# ---- boundaries ---------------------------------------------------
+# ---- process matrices, causal DAGs, do (session C) -----------------
 
-def test_remaining_causal_forms_not_yet_implemented():
+from qrl.lang.interp import Dag
+
+
+def test_pm_of_identity_process_is_causally_separable():
+    W = np.eye(16) * (4 / 16)
+    rows = "[" + ",".join(
+        "[" + ",".join(repr(float(x)) for x in r) + "]" for r in W.real.tolist()
+    ) + "]"
+    v = run(f"pm({rows}, [0.5, 0.5])")
+    assert isinstance(v, Process)
+    assert v.robustness == 0.0            # r* = 0  <=>  causally separable
+
+
+def test_dag_builds_a_quantum_causal_dag():
+    v = run("dag([A, B], [[A, B]], [[A, B, [[1, 0], [0, 1]]]])")
+    assert isinstance(v, Dag)
+    assert v.vertices == ("A", "B") and v.edges == (("A", "B"),)
+
+
+def test_do_propagates_intervention_through_the_chain():
+    src = ("let g = dag([A, B], [[A, B]], [[A, B, [[1, 0], [0, 1]]]]) in "
+           "do(g, A, [[0, 0], [0, 1]])")   # A := |1>, identity to B  =>  outcome 1
+    assert all(run(src, seed=s).m == 1 for s in range(6))
+
+
+def test_do_with_bit_flip_mechanism():
+    v = run(open("examples/lang/causal_dag.qrl").read(), seed=0)
+    assert v.m == 0                       # A := |1>, X channel  =>  B is |0>
+
+
+def test_do_rejects_multi_sink_dag():
+    src = ("let g = dag([A, B, C], [[A, B], [A, C]], "
+           "[[A, B, [[1, 0], [0, 1]]], [A, C, [[1, 0], [0, 1]]]]) in "
+           "do(g, A, [[1, 0], [0, 0]])")
     with pytest.raises(QRLRuntimeError):
-        run("dag([A, B], [[A, B]], [[A, B, [[1, 0], [0, 1]]]])")
+        run(src)
 
+
+def test_dag_rejects_multi_parent_node_at_runtime():
+    src = ("dag([A, B, C], [[A, C], [B, C]], "
+           "[[A, C, [[1, 0], [0, 1]]], [B, C, [[1, 0], [0, 1]]]])")
+    with pytest.raises(QRLRuntimeError):
+        run(src)
+
+
+# ---- boundaries ---------------------------------------------------
 
 def test_ill_typed_program_is_rejected_before_running():
     from qrl.lang.errors import QRLTypeError

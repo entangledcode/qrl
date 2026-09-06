@@ -105,7 +105,7 @@ positive-semidefiniteness + `Tr[W] = dⁿ` (T-PM), density-matrix conditions
 
 ## Execution status
 
-`interp.py` runs:
+`interp.py` runs **every term form**, carrying state as density matrices:
 
 - **basic + relational** — `|k>`, `let`, `entangle` (E-Bell / E-GHZ, arguments
   discarded), `ask` (E-Ask; measures **subsystem 0** in the named basis `Z`/`X`/`Y`,
@@ -114,9 +114,15 @@ positive-semidefiniteness + `Tr[W] = dⁿ` (T-PM), density-matrix conditions
   `Channel`), `;` (channel composition, `t1 ; t2` applies `t1` first),
   `switch(f, g, c)` (E-Switch-Coherent → a `Process` wrapping the quantum-switch
   process matrix, with `.p_win` and `.robustness`).
+- **`pm`** → `Process` from a raw `W`.
+- **`dag`** → `Dag` (`qrl.causal.QuantumCausalDAG`). Node dimensions are inferred
+  from the Φ matrices. **Single-parent nodes only** — a multi-parent node raises a
+  runtime error (use the Python API for joint mechanisms).
+- **`do(g, x, ρ)`** → intervene `x := ρ`, propagate through the DAG, sample a
+  Z-basis outcome on the unique sink node.
 
-State is carried as density matrices throughout. `pm`, `dag`, `do` type-check but
-raise a runtime error until interpreter session C (see `INTERP_PLAN.md`).
+E-Switch-Incoherent is not implemented and cannot be reached: `switch` requires
+`UniProc` channels, so a well-typed `switch` is always coherent.
 
 ## Not yet covered
 
@@ -124,3 +130,4 @@ raise a runtime error until interpreter session C (see `INTERP_PLAN.md`).
 - `pm` validity is the trace-normalisation check, not the full projector identity.
 - `ask` has no subsystem index in the surface syntax — it always measures
   qubit 0.
+- `dag` interpretation handles single-parent nodes only.

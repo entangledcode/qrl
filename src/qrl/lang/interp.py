@@ -14,8 +14,13 @@ Sessions A and B cover the basic, relational, and unitary-causal strata:
     T-UniProc / cptp               unitary and general CPTP channels
     T-Seq                          t1 ; t2  sequential channel composition
     E-Switch-Coherent              switch(f, g, c) -> quantum-switch process
+    T-PM / pm                      process matrix from a raw W
+    T-DAG / dag                    quantum causal DAG (single-parent nodes)
+    T-Do / do                      do-intervention, sampled outcome on the sink
 
-The remaining causal forms (pm, dag, do) raise a runtime error until session C.
+E-Switch-Incoherent is intentionally not implemented: no well-typed surface
+program can reach it (switch requires UniProc channels; a switch over a general
+CPTP map has type PM(2,d), not Switch(d)).
 
 Public entry points (re-exported from `qrl.lang`):
 
@@ -120,10 +125,15 @@ class Process(Value):
         return f"Process({'x'.join(map(str, self.pm.input_dims))}{extra})"
 
 
-# placeholder for session C
 @dataclass
 class Dag(Value):
+    """A quantum causal DAG — `qrl.causal.QuantumCausalDAG`."""
     dag: object
+    vertices: tuple = ()
+    edges: tuple = ()
+
+    def __str__(self) -> str:
+        return f"Dag({len(self.vertices)} nodes, {len(self.edges)} edges)"
 
 
 # --------------------------------------------------------------------------
@@ -198,6 +208,25 @@ def _embed_projector(proj1: np.ndarray, k: int, n: int) -> np.ndarray:
     return out
 
 
+def _topo_order(vertices: List[str], edges: List[tuple]) -> List[str]:
+    """Kahn's algorithm; input is already known acyclic (T-DAG)."""
+    indeg = {v: 0 for v in vertices}
+    adj: Dict[str, List[str]] = {v: [] for v in vertices}
+    for a, b in edges:
+        indeg[b] += 1
+        adj[a].append(b)
+    queue = [v for v in vertices if indeg[v] == 0]
+    out: List[str] = []
+    while queue:
+        u = queue.pop(0)
+        out.append(u)
+        for w in adj[u]:
+            indeg[w] -= 1
+            if indeg[w] == 0:
+                queue.append(w)
+    return out
+
+
 def _canonical_entangled(n: int) -> np.ndarray:
     """(|0...0> + |1...1>) / sqrt(2) as a density matrix — E-Bell / E-GHZ."""
     psi = np.zeros(2 ** n, dtype=complex)
@@ -257,8 +286,7 @@ class Interp:
         method = getattr(self, f"_ev_{type(t).__name__}", None)
         if method is None:
             raise QRLRuntimeError(
-                f"cannot evaluate {type(t).__name__} (not implemented in session A)",
-                t.line, t.col,
+                f"cannot evaluate {type(t).__name__} as a term", t.line, t.col
             )
         return method(t, env)
 
@@ -347,6 +375,85 @@ class Interp:
             )
         qs = QuantumSwitch(channel_A=f.cptp, channel_B=g.cptp)
         return Process(qs.process_matrix(), source=qs, control=control.rho)
+
+    def _ev_PM(self, t: ast.PM, env: _Env) -> Value:
+        from qrl.causal import ProcessMatrix
+        from .typecheck import _pm_shape
+
+        W = np.array(t.w.rows, dtype=complex)
+        n, d = _pm_shape(W.shape[0])
+        parties = [chr(ord("A") + i) for i in range(n)]
+        try:
+            pm = ProcessMatrix(W=W, parties=parties,
+                               input_dims=[d] * n, output_dims=[d] * n)
+        except ValueError as e:
+            raise QRLRuntimeError(f"pm: {e}", t.w.line, t.w.col) from None
+        return Process(pm)
+
+    def _ev_DAG(self, t: ast.DAG, env: _Env) -> Value:
+        from qrl.causal import QuantumCausalDAG, CPTPMap
+
+        parents: Dict[str, list] = {v: [] for v in t.vertices}
+        phi_mat: Dict[tuple, np.ndarray] = {}
+        for (a, b, mnode) in t.phi:
+            parents[b].append(a)
+            phi_mat[(a, b)] = np.array(mnode.rows, dtype=complex)
+        for b, ps in parents.items():
+            if len(ps) > 1:
+                raise QRLRuntimeError(
+                    f"dag: node {b!r} has {len(ps)} parents; the interpreter "
+                    f"currently handles single-parent nodes only (use the "
+                    f"Python API for joint mechanisms)",
+                    t.line, t.col,
+                )
+
+        # infer a dimension for every vertex from the Phi matrices
+        dim: Dict[str, int] = {}
+        for (a, b), M in phi_mat.items():
+            dim[b] = M.shape[0]
+            dim.setdefault(a, M.shape[1])
+        for v in t.vertices:
+            dim.setdefault(v, 2)
+
+        g = QuantumCausalDAG(description="qrl.lang dag")
+        order = _topo_order(list(t.vertices), list(t.edges))
+        for v in order:
+            is_root = not parents[v]
+            prior = None
+            if is_root:
+                prior = np.zeros((dim[v], dim[v]), dtype=complex)
+                prior[0, 0] = 1.0  # |0><0|
+            g.add_node(v, dim=dim[v], prior=prior)
+        for (a, b), M in phi_mat.items():
+            try:
+                g.add_channel(a, b, CPTPMap(kraus_ops=[M], input_dim=M.shape[1],
+                                            output_dim=M.shape[0]))
+            except ValueError as e:
+                raise QRLRuntimeError(f"dag: edge ({a}, {b}): {e}",
+                                      t.line, t.col) from None
+        return Dag(g, vertices=tuple(t.vertices), edges=tuple(t.edges))
+
+    def _ev_Do(self, t: ast.Do, env: _Env) -> Value:
+        g = self.eval(t.graph, env)
+        if not isinstance(g, Dag):
+            raise QRLRuntimeError("do: first argument is not a causal DAG",
+                                  t.graph.line, t.graph.col)
+        rho = np.array(t.rho.rows, dtype=complex)
+        sinks = [v for v in g.vertices
+                 if not any(a == v for (a, b) in g.edges)]
+        if len(sinks) != 1:
+            raise QRLRuntimeError(
+                f"do: the DAG has {len(sinks)} sink nodes {sinks}; the "
+                f"interpreter samples the outcome on a unique sink",
+                t.line, t.col,
+            )
+        try:
+            out_rho = g.dag.interventional_state(sinks[0], {t.var: rho})
+        except (ValueError, KeyError) as e:
+            raise QRLRuntimeError(f"do: {e}", t.line, t.col) from None
+        probs = np.clip(np.diag(out_rho).real, 0.0, None)
+        probs = probs / probs.sum()
+        return Outcome(int(self.rng.choice(len(probs), p=probs)))
 
     # ---- helpers --------------------------------------------------
     @staticmethod

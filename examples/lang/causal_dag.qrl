@@ -1,0 +1,10 @@
+-- A two-node quantum causal DAG: A -> B, with an X (bit-flip) mechanism.
+-- do(g, A, |1><1|) forces A into |1>; the X channel sends B to |0>.
+--
+--   qrl check examples/lang/causal_dag.qrl   ->   ok  : Outcome
+--   qrl exec  examples/lang/causal_dag.qrl --shots 100   ->   {0: 100}
+
+let g = dag([A, B],
+            [[A, B]],
+            [[A, B, [[0, 1], [1, 0]]]]) in
+do(g, A, [[0, 0], [0, 1]])

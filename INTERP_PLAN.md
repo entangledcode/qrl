@@ -93,7 +93,18 @@ source span.
   `E-Switch-Incoherent` deliberately skipped — unreachable from well-typed
   surface programs. `examples/lang/causal_dag.qrl` added. 6 new tests
   (84 lang tests total). Every term form now evaluates.
-- **D — polish + paper.** `qrl exec -` from stdin already works. Runtime error
+- **D — paper edits. DONE (Sept 6 2026).** §2.5: interpreter described, `qrl
+  exec` added, "$\sim$1,800 lines, 84 tests". §3: OCB listing rewritten as
+  3 lines of surface syntax with `qrl exec ocb.qrl` output (identity channels,
+  `Process(2x2, P_win=0.8536, robustness=0.4142)`), `causal_game_advantage()`
+  API-name bug gone. §1: abstract + contribution bullet #2 + implementation
+  sentence mention the interpreter. §6: "Execution of surface programs"
+  limitation replaced by "Interpreter coverage" (ask index, single-parent dag).
+  §7: remaining-work list drops "lowering ... to a direct interpreter", now ends
+  with "compilation of the causal stratum to hardware". Compiles clean, 10 pages.
+  Original polish sub-items below still open (not blocking).
+
+- **D-polish (optional).** `qrl exec -` from stdin already works. Runtime error
   messages with carets (done for session A; extend to B/C). Update `docs/surface-syntax.md`
   ("Not yet covered" section shrinks). Paper edits: §6 remove the "execution of
   surface programs" limitation; §2.5 add one sentence that `qrl run` executes the

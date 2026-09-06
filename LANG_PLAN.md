@@ -90,11 +90,11 @@ Key checks:
       switch_rejected rejected); abstract clause; 5th contributions bullet;
       implementation sentence; §6 "Execution of surface programs"; §7 conclusion.
       Compiles clean, 10 pages, zero warnings.
-- [~] interp.py (lowering onto execution) — see `INTERP_PLAN.md`.
-      Sessions A + B + C done: every term form executes. `qrl exec FILE.qrl`;
+- [x] interp.py (lowering onto execution) — see `INTERP_PLAN.md`.
+      Sessions A–D done: every term form executes; `qrl exec FILE.qrl`;
       switch.qrl reproduces P_win=0.8536 / r*=√2−1; dag/do run for single-parent
-      graphs; 84 lang tests. Session D (paper edits removing the last limitation)
-      pending.
+      graphs; 84 lang tests. Paper updated (§1/§2.5/§3/§6/§7), compiles clean
+      10 pages. Optional D-polish items remain (see INTERP_PLAN.md).
 
 ## Notes for the paper edit (when ready)
 

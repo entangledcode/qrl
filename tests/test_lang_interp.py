@@ -114,11 +114,57 @@ def test_sampled_frequencies_track_the_distribution():
     assert abs(ones / n - 0.5) < 0.05
 
 
-# ---- session-A boundary --------------------------------------------
+# ---- causal stratum, unitary path (session B) ----------------------
 
-def test_causal_stratum_not_yet_implemented():
+from qrl.lang.interp import Channel, Process
+
+
+def test_cptp_of_unitary_is_a_unitary_channel():
+    v = run("cptp([[0, 1], [1, 0]])")
+    assert isinstance(v, Channel) and v.is_unitary and v.cptp.input_dim == 2
+
+
+def test_cptp_of_kraus_map_is_a_nonunitary_channel():
+    v = run("cptp([[1, 0], [0, 0]], [[0, 0], [0, 1]])")
+    assert isinstance(v, Channel) and not v.is_unitary
+
+
+def test_seq_composes_channels():
+    v = run("let X = cptp([[0, 1], [1, 0]]) in X ; X")   # X ; X == identity
+    assert isinstance(v, Channel)
+    out = v.cptp.apply(np.array([[1, 0], [0, 0]], dtype=complex))
+    assert np.allclose(out, [[1, 0], [0, 0]])
+
+
+def test_switch_reproduces_ocb_causal_game_advantage():
+    v = run(open("examples/lang/switch.qrl").read())
+    assert isinstance(v, Process)
+    assert abs(v.p_win - (2 + np.sqrt(2)) / 4) < 1e-12
+    assert abs(v.robustness - (np.sqrt(2) - 1)) < 1e-9
+
+
+def test_switch_matches_the_python_api_differentially():
+    from qrl.causal import QuantumSwitch, cptp_from_unitary
+    X = np.array([[0, 1], [1, 0]], dtype=complex)
+    Z = np.array([[1, 0], [0, -1]], dtype=complex)
+    qs = QuantumSwitch(channel_A=cptp_from_unitary(X), channel_B=cptp_from_unitary(Z))
+    src = ("let X = cptp([[0, 1], [1, 0]]) in "
+           "let Z = cptp([[1, 0], [0, -1]]) in switch(X, Z, |+>)")
+    v = run(src)
+    assert np.isclose(v.p_win, qs.causal_inequality_value())
+    assert np.allclose(v.pm.W, qs.process_matrix().W)
+
+
+def test_switch_is_causally_nonseparable():
+    v = run("let U = cptp([[1, 0], [0, -1]]) in switch(U, U, |0>)")
+    assert v.robustness > 0  # r* > 0  <=>  causally nonseparable
+
+
+# ---- boundaries ---------------------------------------------------
+
+def test_remaining_causal_forms_not_yet_implemented():
     with pytest.raises(QRLRuntimeError):
-        run("let U = cptp([[0, 1], [1, 0]]) in switch(U, U, |+>)")
+        run("dag([A, B], [[A, B]], [[A, B, [[1, 0], [0, 1]]]])")
 
 
 def test_ill_typed_program_is_rejected_before_running():

@@ -91,8 +91,9 @@ Key checks:
       implementation sentence; §6 "Execution of surface programs"; §7 conclusion.
       Compiles clean, 10 pages, zero warnings.
 - [~] interp.py (lowering onto execution) — see `INTERP_PLAN.md`.
-      Session A done (basic + relational strata, `qrl exec`, 17 tests).
-      Sessions B (causal unitary), C (pm/dag/do), D (paper edits) pending.
+      Sessions A + B done (basic, relational, unitary causal; `qrl exec`;
+      switch.qrl runs and reproduces P_win=0.8536 / r*=√2−1; 79 lang tests).
+      Sessions C (pm/dag/do), D (paper edits) pending.
 
 ## Notes for the paper edit (when ready)
 

@@ -76,10 +76,16 @@ source span.
   [--dist]` — note: `exec`, not `run`, because `qrl run` is the experiment
   runner (bell/ghz/demo). `examples/lang/bell.qrl` executes. 17 tests in
   `tests/test_lang_interp.py` (73 lang tests total, all pass under pytest).
-- **B — causal, unitary path.** `Cptp`, `Seq`, `Switch` (E-Switch-Coherent) via
-  `QuantumSwitch`. Makes `examples/lang/switch.qrl` execute and reproduce
-  `P_win = 0.8536`, robustness `√2 − 1`. Differential test vs the §3 Python-API
-  listing (must agree to 1e-9).
+- **B — causal, unitary path. DONE (Sept 6 2026).** `Cptp` (→ `Channel`, unitary
+  or CPTP), `Seq` (`t1 ; t2` = `t2.compose(t1)`), `Switch` (E-Switch-Coherent →
+  `Process` wrapping `QuantumSwitch.process_matrix()`, with `.p_win` /
+  `.robustness` accessors). `examples/lang/switch.qrl` executes:
+  `Process(2x2, P_win=0.8536, robustness=0.4142)`. Differential test vs the
+  Python API (`v.pm.W == qs.process_matrix().W`, p_win match). 6 new tests
+  (79 lang tests total).
+  NOTE for session D: the paper's §3 listing calls `sw.causal_game_advantage()`
+  and `W.causal_nonseparability_robustness()` — the first method name does not
+  exist (`causal_inequality_value()` does). Fix the listing in session D.
 - **C — remaining causal.** `PM`, `DAG`, `Do`, `E-Switch-Incoherent`. Wire to
   `ProcessMatrix` / `QuantumCausalDAG`. Tests per node.
 - **D — polish + paper.** `qrl exec -` from stdin already works. Runtime error

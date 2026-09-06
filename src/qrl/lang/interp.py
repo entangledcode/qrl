@@ -4,16 +4,18 @@ Evaluates a type-checked AST following the small-step operational semantics of
 `papers/qpl-2026/quantum-causal-structure.tex` Section 2.3.  State is carried as
 density matrices throughout (the paper's "values are density matrices rho ...").
 
-Session A covers the basic and relational strata:
+Sessions A and B cover the basic, relational, and unitary-causal strata:
 
     T-Qubit / T-Var / T-Let        |0> |1> |+>, variables, let-binding
     E-Bell / E-GHZ                  entangle(...) -> canonical maximally
                                     entangled state, *ignoring* its arguments
     E-Ask                          Born-rule partial measurement of subsystem 0
     T-Tensor                       t1 * t2 on states (Kronecker product)
+    T-UniProc / cptp               unitary and general CPTP channels
+    T-Seq                          t1 ; t2  sequential channel composition
+    E-Switch-Coherent              switch(f, g, c) -> quantum-switch process
 
-The causal stratum (cptp, ;, switch, pm, dag, do) raises NotImplementedError
-until sessions B and C.
+The remaining causal forms (pm, dag, do) raise a runtime error until session C.
 
 Public entry points (re-exported from `qrl.lang`):
 
@@ -74,17 +76,51 @@ class Pair(Value):
         return f"({self.fst}, {self.snd})"
 
 
-# placeholders for sessions B/C
 @dataclass
 class Channel(Value):
+    """A CPTP channel — `qrl.causal.CPTPMap`.  Unitary iff a single unitary Kraus."""
     cptp: object
+
+    @property
+    def is_unitary(self) -> bool:
+        return self.cptp.is_unitary()
+
+    def __str__(self) -> str:
+        kind = "unitary" if self.is_unitary else "CPTP"
+        return f"Channel({kind}, d={self.cptp.input_dim})"
 
 
 @dataclass
 class Process(Value):
+    """A process matrix — `qrl.causal.ProcessMatrix`.
+
+    `source` is the originating `QuantumSwitch` when this came from `switch(...)`,
+    which is where the readable P_win / robustness accessors come from.
+    """
     pm: object
+    source: object = None
+    control: object = None
+
+    @property
+    def p_win(self):
+        return self.pm.causal_inequality_value()
+
+    @property
+    def robustness(self):
+        return self.pm.causal_nonseparability_robustness()
+
+    def __str__(self) -> str:
+        pw = self.p_win
+        r = self.robustness
+        extra = ""
+        if pw is not None:
+            extra = f", P_win={pw:.4f}"
+            if r is not None:
+                extra += f", robustness={r:.4f}"
+        return f"Process({'x'.join(map(str, self.pm.input_dims))}{extra})"
 
 
+# placeholder for session C
 @dataclass
 class Dag(Value):
     dag: object
@@ -103,6 +139,12 @@ _KET_VEC = {
 
 def _ketbra(v: np.ndarray) -> np.ndarray:
     return np.outer(v, v.conj())
+
+
+def _is_unitary(m: np.ndarray) -> bool:
+    if m.ndim != 2 or m.shape[0] != m.shape[1]:
+        return False
+    return np.allclose(m.conj().T @ m, np.eye(m.shape[0]), atol=1e-6)
 
 
 # observable name -> list of (outcome_label, projector) in the single-qubit space
@@ -262,8 +304,57 @@ class Interp:
         if isinstance(a, QState) and isinstance(b, QState):
             return QState(np.kron(a.rho, b.rho))
         raise QRLRuntimeError(
-            "tensor of non-state values is not supported in session A",
+            "tensor is currently supported only for states (QState * QState)",
             t.line, t.col,
+        )
+
+    # ---- causal stratum (unitary path) -------------------------
+    def _ev_Cptp(self, t: ast.Cptp, env: _Env) -> Value:
+        from qrl.causal import CPTPMap, cptp_from_unitary
+
+        mats = [np.array(k.rows, dtype=complex) for k in t.kraus]
+        d = mats[0].shape[0]
+        if len(mats) == 1 and _is_unitary(mats[0]):
+            return Channel(cptp_from_unitary(mats[0]))
+        try:
+            return Channel(CPTPMap(kraus_ops=mats, input_dim=d, output_dim=d))
+        except ValueError as e:
+            raise QRLRuntimeError(f"cptp: {e}", t.line, t.col) from None
+
+    def _ev_Seq(self, t: ast.Seq, env: _Env) -> Value:
+        left = self._as_channel(self.eval(t.left, env), t.left)
+        right = self._as_channel(self.eval(t.right, env), t.right)
+        # t1 ; t2  =  apply t1 first, then t2  =  t2 ∘ t1
+        try:
+            return Channel(right.cptp.compose(left.cptp))
+        except ValueError as e:
+            raise QRLRuntimeError(f"sequential composition: {e}", t.line, t.col) from None
+
+    def _ev_Switch(self, t: ast.Switch, env: _Env) -> Value:
+        from qrl.causal import QuantumSwitch
+
+        f = self._as_channel(self.eval(t.f, env), t.f)
+        g = self._as_channel(self.eval(t.g, env), t.g)
+        control = self.eval(t.control, env)
+        if not isinstance(control, QState) or control.n != 1:
+            raise QRLRuntimeError("switch: control must be a single qubit",
+                                  t.control.line, t.control.col)
+        if not (f.is_unitary and g.is_unitary):
+            # T-Switch should have prevented this; belt and braces
+            raise QRLRuntimeError(
+                "switch: both channels must be unitary (E-Switch-Coherent)",
+                t.line, t.col,
+            )
+        qs = QuantumSwitch(channel_A=f.cptp, channel_B=g.cptp)
+        return Process(qs.process_matrix(), source=qs, control=control.rho)
+
+    # ---- helpers --------------------------------------------------
+    @staticmethod
+    def _as_channel(v: Value, node: ast.Term) -> "Channel":
+        if isinstance(v, Channel):
+            return v
+        raise QRLRuntimeError(
+            f"expected a channel, got {type(v).__name__}", node.line, node.col
         )
 
     # ---- helpers --------------------------------------------------

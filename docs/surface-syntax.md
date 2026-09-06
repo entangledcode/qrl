@@ -105,14 +105,18 @@ positive-semidefiniteness + `Tr[W] = dⁿ` (T-PM), density-matrix conditions
 
 ## Execution status
 
-`interp.py` runs the **basic and relational** strata (`|k>`, `let`, `entangle`
-via E-Bell / E-GHZ, `ask` via E-Ask, `*` on states). State is carried as density
-matrices. `ask` measures **subsystem 0** of the relation in the named basis
-(`Z`, `X`, `Y`) and returns `(outcome, post-measurement relation)`.
+`interp.py` runs:
 
-The **causal** stratum (`cptp`, `;`, `switch`, `pm`, `dag`, `do`) type-checks
-but raises a runtime error until the interpreter's sessions B and C land
-(see `INTERP_PLAN.md`).
+- **basic + relational** — `|k>`, `let`, `entangle` (E-Bell / E-GHZ, arguments
+  discarded), `ask` (E-Ask; measures **subsystem 0** in the named basis `Z`/`X`/`Y`,
+  returns `(outcome, post-measurement relation)`), `*` on states.
+- **unitary causal** — `cptp` (unitary → unitary `Channel`; Kraus list → CPTP
+  `Channel`), `;` (channel composition, `t1 ; t2` applies `t1` first),
+  `switch(f, g, c)` (E-Switch-Coherent → a `Process` wrapping the quantum-switch
+  process matrix, with `.p_win` and `.robustness`).
+
+State is carried as density matrices throughout. `pm`, `dag`, `do` type-check but
+raise a runtime error until interpreter session C (see `INTERP_PLAN.md`).
 
 ## Not yet covered
 

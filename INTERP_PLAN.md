@@ -68,19 +68,22 @@ source span.
 
 ## Phasing (one session each unless noted)
 
-- **A — basic + relational.** `interp.py` scaffold, `Value` types, RNG plumbing.
-  `Ket`, `Var`, `Let`, `Entangle` (E-Bell/E-GHZ), `Ask` (E-Ask, seeded), `Tensor`
-  on states. `run` + `distribution`. Makes `examples/lang/bell.qrl` execute.
-  Tests: `tests/test_lang_interp.py` — Bell correlations, GHZ, seeded determinism,
-  `distribution` sums to 1.
+- **A — basic + relational. DONE (Sept 6 2026).** `interp.py`: `Value` types
+  (density-matrix `QState`, `Outcome`, `Pair`), seeded RNG, `Ket`/`Var`/`Let`/
+  `Entangle` (E-Bell/E-GHZ, args discarded)/`Ask` (E-Ask, measures subsystem 0)/
+  `Tensor` on states. `run(src, seed=, shots=)` + `distribution(src)` (peels
+  outer `let`s, exact probs). CLI: `qrl exec FILE.qrl [--shots N] [--seed S]
+  [--dist]` — note: `exec`, not `run`, because `qrl run` is the experiment
+  runner (bell/ghz/demo). `examples/lang/bell.qrl` executes. 17 tests in
+  `tests/test_lang_interp.py` (73 lang tests total, all pass under pytest).
 - **B — causal, unitary path.** `Cptp`, `Seq`, `Switch` (E-Switch-Coherent) via
   `QuantumSwitch`. Makes `examples/lang/switch.qrl` execute and reproduce
   `P_win = 0.8536`, robustness `√2 − 1`. Differential test vs the §3 Python-API
   listing (must agree to 1e-9).
 - **C — remaining causal.** `PM`, `DAG`, `Do`, `E-Switch-Incoherent`. Wire to
   `ProcessMatrix` / `QuantumCausalDAG`. Tests per node.
-- **D — polish + paper.** `qrl run FILE.qrl [--shots N] [--seed S]`, `qrl run -`
-  from stdin. Runtime error messages with carets. Update `docs/surface-syntax.md`
+- **D — polish + paper.** `qrl exec -` from stdin already works. Runtime error
+  messages with carets (done for session A; extend to B/C). Update `docs/surface-syntax.md`
   ("Not yet covered" section shrinks). Paper edits: §6 remove the "execution of
   surface programs" limitation; §2.5 add one sentence that `qrl run` executes the
   operational semantics; §7 conclusion. Recompile.

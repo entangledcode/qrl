@@ -8,6 +8,7 @@ Usage:
     qrl compile bell|ghz [--target T] [-o FILE]
     qrl check FILE.qrl
     qrl parse FILE.qrl
+    qrl exec FILE.qrl [--shots N] [--seed S] [--dist]
     qrl inspect graph|pattern|circuit bell|ghz
     qrl cloud status
     qrl cloud run bell|ghz [--platform P]
@@ -483,6 +484,45 @@ def cmd_parse(args: argparse.Namespace) -> None:
     pprint.pp(tree)
 
 
+def cmd_exec(args: argparse.Namespace) -> None:
+    from collections import Counter
+    from qrl.lang import run as _run, distribution as _distribution
+    from qrl.lang.errors import QRLError
+
+    src = _read_source(args.file)
+    label = args.file if args.file != "-" else "<stdin>"
+    try:
+        if args.dist:
+            dist = _distribution(src)
+            print(f"{_bold(label)}  outcome distribution")
+            for m, p in sorted(dist.items()):
+                print(f"  {m}: {p:.6f}")
+            return
+        results = _run(src, seed=args.seed, shots=args.shots)
+        if args.shots == 1:
+            print(f"{_bold(label)}  {results}")
+        else:
+            outcomes = [_outcome_of(r) for r in results]
+            if all(o is not None for o in outcomes):
+                hist = dict(sorted(Counter(outcomes).items()))
+                print(f"{_bold(label)}  {args.shots} shots  ->  {hist}")
+            else:
+                print(f"{_bold(label)}  {args.shots} shots  ->  {results[0]} (+{args.shots - 1} more)")
+    except QRLError as e:
+        print(str(e.with_source(src)), file=sys.stderr)
+        sys.exit(1)
+
+
+def _outcome_of(value):
+    """Pull an integer outcome out of an Outcome or (Outcome, _) pair."""
+    from qrl.lang.interp import Outcome, Pair
+    if isinstance(value, Outcome):
+        return value.m
+    if isinstance(value, Pair) and isinstance(value.fst, Outcome):
+        return value.fst.m
+    return None
+
+
 def cmd_info(args: argparse.Namespace) -> None:
     import qrl
 
@@ -849,11 +889,19 @@ def build_parser() -> argparse.ArgumentParser:
     cloud_run_p.add_argument("--platform", default="sim:belenos")
     cloud_run_p.add_argument("--shots", type=int, default=1000)
 
-    # -- check / parse (surface language) --
+    # -- check / parse / exec (surface language) --
     check_p = sub.add_parser("check", help="Type-check a .qrl source file")
     check_p.add_argument("file", help="Path to a .qrl source file ('-' for stdin)")
     parse_p = sub.add_parser("parse", help="Parse a .qrl source file and dump its AST")
     parse_p.add_argument("file", help="Path to a .qrl source file ('-' for stdin)")
+    exec_p = sub.add_parser("exec", help="Type-check and execute a .qrl source file")
+    exec_p.add_argument("file", help="Path to a .qrl source file ('-' for stdin)")
+    exec_p.add_argument("--shots", type=int, default=1,
+                        help="Re-run the program N times (probabilistic ask)")
+    exec_p.add_argument("--seed", type=int, default=None,
+                        help="Seed the RNG for a reproducible run")
+    exec_p.add_argument("--dist", action="store_true",
+                        help="Print the exact outcome distribution instead of sampling")
 
     # -- info --
     sub.add_parser("info", help="Show version, dependencies, and stats")
@@ -915,6 +963,9 @@ def main(argv: Optional[list] = None) -> None:
 
     elif args.command == "parse":
         cmd_parse(args)
+
+    elif args.command == "exec":
+        cmd_exec(args)
 
     elif args.command == "info":
         cmd_info(args)

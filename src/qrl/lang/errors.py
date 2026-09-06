@@ -43,3 +43,9 @@ class QRLTypeError(QRLError):
     @property
     def kind(self) -> str:
         return "type error"
+
+
+class QRLRuntimeError(QRLError):
+    @property
+    def kind(self) -> str:
+        return "runtime error"

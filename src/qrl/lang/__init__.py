@@ -18,7 +18,8 @@ The thirteen typing rules implemented here are exactly those of
 from __future__ import annotations
 
 from . import ast, types
-from .errors import QRLError, QRLSyntaxError, QRLTypeError
+from .errors import QRLError, QRLRuntimeError, QRLSyntaxError, QRLTypeError
+from .interp import distribution, run
 from .lexer import tokenize
 from .parser import parse, parse_type
 from .typecheck import check_program as check
@@ -31,9 +32,12 @@ __all__ = [
     "parse_type",
     "check",
     "check_source",
+    "run",
+    "distribution",
     "QRLError",
     "QRLSyntaxError",
     "QRLTypeError",
+    "QRLRuntimeError",
 ]
 
 

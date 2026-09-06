@@ -5,16 +5,23 @@ A concrete syntax for QRL-Core, the calculus of
 checker live in `src/qrl/lang/`.
 
 ```
-qrl check FILE.qrl     # parse + type-check, print  ok  FILE : <type>
-qrl parse FILE.qrl     # dump the AST
+qrl check FILE.qrl              # parse + type-check, print  ok  FILE : <type>
+qrl parse FILE.qrl              # dump the AST
+qrl exec  FILE.qrl [--shots N] [--seed S] [--dist]   # type-check then run
 ```
 
 or programmatically:
 
 ```python
-from qrl.lang import check_source
+from qrl.lang import check_source, run, distribution
 check_source("ask(entangle(|0>, |1>), Z)")     # -> (Outcome * Rel(2))
+run("ask(entangle(|0>, |1>), Z)", seed=0)      # -> (Outcome(1), QState(n=2))
+distribution("ask(entangle(|0>, |1>), Z)")     # -> {0: 0.5, 1: 0.5}  (exact)
 ```
+
+`run` samples the probabilistic `ask` rule (`--seed` / `shots=` for
+reproducibility); `distribution` computes exact outcome probabilities and is
+defined when the program's result comes from a top-level `ask`.
 
 ## Grammar
 
@@ -96,8 +103,20 @@ positive-semidefiniteness + `Tr[W] = dⁿ` (T-PM), density-matrix conditions
 (`Tr_out W = I_in` as an operator identity) is delegated to
 `qrl.causal.ProcessMatrix` at run time.
 
+## Execution status
+
+`interp.py` runs the **basic and relational** strata (`|k>`, `let`, `entangle`
+via E-Bell / E-GHZ, `ask` via E-Ask, `*` on states). State is carried as density
+matrices. `ask` measures **subsystem 0** of the relation in the named basis
+(`Z`, `X`, `Y`) and returns `(outcome, post-measurement relation)`.
+
+The **causal** stratum (`cptp`, `;`, `switch`, `pm`, `dag`, `do`) type-checks
+but raises a runtime error until the interpreter's sessions B and C land
+(see `INTERP_PLAN.md`).
+
 ## Not yet covered
 
-- No lowering to `qrl.core` / `qrl.causal` execution yet (`interp.py` is a stub).
 - No module system / top-level definitions — one `term` per file.
 - `pm` validity is the trace-normalisation check, not the full projector identity.
+- `ask` has no subsystem index in the surface syntax — it always measures
+  qubit 0.

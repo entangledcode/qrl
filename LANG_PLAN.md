@@ -90,8 +90,9 @@ Key checks:
       switch_rejected rejected); abstract clause; 5th contributions bullet;
       implementation sentence; §6 "Execution of surface programs"; §7 conclusion.
       Compiles clean, 10 pages, zero warnings.
-- [ ] interp.py (lowering onto `qrl.core` / `qrl.causal`) — stretch, not required
-      for resubmission
+- [~] interp.py (lowering onto execution) — see `INTERP_PLAN.md`.
+      Session A done (basic + relational strata, `qrl exec`, 17 tests).
+      Sessions B (causal unitary), C (pm/dag/do), D (paper edits) pending.
 
 ## Notes for the paper edit (when ready)
 

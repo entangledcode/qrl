@@ -484,7 +484,7 @@ QRL is an active research project exploring relations-first quantum computing. C
 ## Contact
 
 **David Coldeira**
-- Email: dcoldeira@gmail.com
+- Email: david@entangledcode.dev
 - GitHub: [@dcoldeira](https://github.com/dcoldeira)
 - Blog: [dcoldeira.github.io](https://dcoldeira.github.io)
 - Platform: [entangledcode.dev](https://entangledcode.dev)

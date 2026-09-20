@@ -117,6 +117,7 @@ task from the backlog below and run it interactively.
 | Property tests: round-trip `parse → check → run` on all `examples/lang/` | 1–2 | `INTERP_PLAN.md` Session E (optional) | Contained to `tests/` |
 | QRL Book Ch 15 — QuantumSwitch Soundness (still placeholder) | 2 | `project_qrl_book` memory | Larger, needs the Soundness Theorem explained correctly — review closely |
 | Additional tests for existing `qrl.lang` modules | 1 | This session | Good first task — no new surface area, just coverage |
+| **QRL as a framework for physics** — explore using QRL's causal-structure/relational-correlation primitives to model physical systems directly (not just language-internals work), leaning into what makes QRL different from circuit-first SDKs | 2–3 | User, this session | Open-ended and exploratory by nature — bigger and harder to review at a glance than the other backlog items, so needs a track record first. No concrete task shape yet; first step next session is probably scoping *what* to model, not writing code |
 
 Pick the next task here before starting a session; update this row (or add
 a Session log entry) with what actually happened.

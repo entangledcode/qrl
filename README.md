@@ -5,8 +5,8 @@
 *Formerly known as QPL (Quantum Process Language) — renamed January 2026 to avoid conflict with Selinger's QPL (2004)*
 
 [![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18292199-blue)](https://doi.org/10.5281/zenodo.18292199)
-[![Tests](https://img.shields.io/badge/Tests-838%20passing-brightgreen)](tests/)
-[![Lines](https://img.shields.io/badge/Code-~12900%20lines-blue)](src/)
+[![Tests](https://img.shields.io/badge/Tests-968%20passing-brightgreen)](tests/)
+[![Lines](https://img.shields.io/badge/Code-~15100%20lines-blue)](src/)
 [![Photonic](https://img.shields.io/badge/Photonic-Verified-purple)](examples/quandela/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/)
@@ -154,7 +154,7 @@ qrl> quit
 
 ## Implementation Status
 
-**~12,900 lines of code | 838 tests passing | Full photonic pipeline verified**
+**~15,100 lines of code | 968 tests passing | Full photonic pipeline verified**
 
 ### Stage 0-3: Core Language & MBQC Compiler (Complete)
 
@@ -303,7 +303,7 @@ rho = QuantumCommonCause(n=2).state()
 python -m pytest tests/ -v
 ```
 
-- **838 tests passing** (17 skipped)
+- **968 tests passing** (29 skipped)
 - **Bell correlations** verified (CHSH violation S = 2.83; hardware S = 2.61 ± 0.08)
 - **Loophole-free Bell test** modelled (Hensen et al. 2015 — η_crit, heralded state, p-value)
 - **GHZ paradox** demonstrated (Mermin inequality M = 4, classical limit 2)
@@ -407,7 +407,7 @@ qrl/
 │       ├── bell.py          # CHSH inequality, BellTest, noisy Werner states
 │       ├── ghz.py           # GHZ paradox, Mermin inequality
 │       └── hensen.py        # Loophole-free Bell test (Hensen et al. 2015)
-├── tests/                   # 838 tests
+├── tests/                   # 968 tests
 ├── examples/
 │   ├── pennylane/
 │   └── quandela/

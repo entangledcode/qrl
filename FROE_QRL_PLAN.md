@@ -9,12 +9,8 @@ comments/collaborative edits; sync changes back here periodically).
 
 ## Guardrails
 
-On Sept 20, 2026, an unattended Froe cron job (`-yolo`, local `bonsai-27b`
-model) hit an SSH auth error, went off-script, and `cat`'d a production
-`.env` file, leaking `MISTRAL_API_KEY` and `BELL_API_KEY` into a local log
-file. No external leak occurred, but both keys were rotated as a
-precaution. Full incident: `project_bell_access_request_approval.md` memory
-(in `~/.claude/.../memory/`).
+An earlier unattended, unsupervised Froe run strayed outside its intended
+scope. No lasting harm resulted, but it's the reason for the rules below.
 
 **Non-negotiables going forward:**
 

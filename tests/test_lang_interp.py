@@ -136,11 +136,12 @@ def test_seq_composes_channels():
     assert np.allclose(out, [[1, 0], [0, 0]])
 
 
-def test_switch_reproduces_ocb_causal_game_advantage():
+def test_switch_example_is_certified_by_its_witness():
     v = run(open("examples/lang/switch.qrl").read())
     assert isinstance(v, Process)
-    assert abs(v.p_win - (2 + np.sqrt(2)) / 4) < 1e-12
-    assert abs(v.robustness - (np.sqrt(2) - 1)) < 1e-9
+    assert v.p_win is None                      # the switch can't win a causal game
+    assert abs(v.witness - (-0.150711)) < 1e-5  # Araújo et al. 2015, Sec. V B
+    assert "certified nonseparable" in str(v)
 
 
 def test_switch_matches_the_python_api_differentially():
@@ -151,13 +152,17 @@ def test_switch_matches_the_python_api_differentially():
     src = ("let X = cptp([[0, 1], [1, 0]]) in "
            "let Z = cptp([[1, 0], [0, -1]]) in switch(X, Z, |+>)")
     v = run(src)
-    assert np.isclose(v.p_win, qs.causal_inequality_value())
+    assert np.isclose(v.witness, qs.witness_value())
     assert np.allclose(v.pm.W, qs.process_matrix().W)
 
 
-def test_switch_is_causally_nonseparable():
+def test_switch_with_definite_control_is_not_certified():
+    # Control |0> fixes the order (A then B): the process is causally
+    # separable, so the witness must not certify it, even though the term
+    # type-checks as Switch(2).
     v = run("let U = cptp([[1, 0], [0, -1]]) in switch(U, U, |0>)")
-    assert v.robustness > 0  # r* > 0  <=>  causally nonseparable
+    assert v.witness >= 0
+    assert "not certified" in str(v)
 
 
 # ---- process matrices, causal DAGs, do (session C) -----------------

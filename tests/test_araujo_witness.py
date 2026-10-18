@@ -203,10 +203,12 @@ def test_robustness_identity_is_zero():
     assert identity_process(n_parties=2).causal_nonseparability_robustness() == 0.0
 
 
-def test_robustness_switch_is_sqrt2_minus_1():
-    """Quantum switch robustness = √2 − 1 ≈ 0.414 (Araújo et al. result)."""
-    r = quantum_switch_process_matrix().causal_nonseparability_robustness()
-    assert np.isclose(r, np.sqrt(2) - 1.0, atol=1e-8)
+def test_robustness_not_applicable_to_switch():
+    """The OCB-based robustness needs a 2-party process; the switch has A, B, F.
+
+    √2 − 1 is the OCB process's value (Araújo et al. App. F), not the switch's.
+    """
+    assert quantum_switch_process_matrix().causal_nonseparability_robustness() is None
 
 
 def test_robustness_nonnegative_all_cases():
@@ -214,7 +216,6 @@ def test_robustness_nonnegative_all_cases():
     for W in [
         identity_process(n_parties=2),
         definite_order_process('AB'),
-        quantum_switch_process_matrix(),
     ]:
         assert W.causal_nonseparability_robustness() >= 0.0
 
@@ -225,12 +226,9 @@ def test_robustness_none_for_inapplicable():
     assert W.causal_nonseparability_robustness() is None
 
 
-def test_robustness_equals_witness_magnitude():
-    """For nonseparable W: robustness = |witness value| = -(3 − 4·P_win)."""
-    W_switch = quantum_switch_process_matrix()
-    r = W_switch.causal_nonseparability_robustness()
-    p_win = W_switch.causal_inequality_value()
-    assert np.isclose(r, -(3.0 - 4.0 * p_win), atol=1e-8)
+def test_switch_process_is_certified_by_switch_witness():
+    """The switch is detected by its own witness, not by the OCB witness."""
+    assert quantum_switch_process_matrix().is_causally_separable() is False
 
 
 # ------------------------------------------------------------------ #

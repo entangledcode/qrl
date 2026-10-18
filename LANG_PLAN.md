@@ -92,7 +92,9 @@ Key checks:
       Compiles clean, 10 pages, zero warnings.
 - [x] interp.py (lowering onto execution) — see `INTERP_PLAN.md`.
       Sessions A–D done: every term form executes; `qrl exec FILE.qrl`;
-      switch.qrl reproduces P_win=0.8536 / r*=√2−1; dag/do run for single-parent
+      switch.qrl reproduces P_win=0.8536 / r*=√2−1 [corrected Oct 18 2026: those were
+      hard-coded OCB-process values; switch.qrl now reports the computed causal
+      witness, -0.1507, see qrl/switch_witness.py]; dag/do run for single-parent
       graphs; 84 lang tests. Paper updated (§1/§2.5/§3/§6/§7), compiles clean
       10 pages. Optional D-polish items remain (see INTERP_PLAN.md).
 

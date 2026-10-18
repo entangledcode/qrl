@@ -125,7 +125,7 @@ qrl cloud run bell                  # Run on Quandela sim:belenos
 qrl check examples/lang/switch.qrl  # Type-check a .qrl program
 qrl parse examples/lang/bell.qrl    # Dump its AST
 qrl exec  examples/lang/bell.qrl --shots 1000   # Type-check and run
-qrl exec  examples/lang/switch.qrl              # -> Process(2x2, P_win=0.8536, robustness=0.4142)
+qrl exec  examples/lang/switch.qrl              # -> Process(2x2x4, witness=-0.1507 (certified nonseparable))
 
 # Tools
 qrl info                            # Version, dependencies, source stats
@@ -276,10 +276,11 @@ H₂ benchmark: E_HF = −1.1167 Ha, E_FCI = −1.1373 Ha; entanglement reaches 
 from qrl.causal import ProcessMatrix, QuantumSwitch, QuantumCausalDAG
 from qrl.causal import quantum_switch_process_matrix, QuantumCommonCause
 
-# Quantum switch — indefinite causal order
+# Quantum switch — indefinite causal order (parties A, B, F; control |+>)
+from qrl.switch_witness import switch_witness
 W = quantum_switch_process_matrix()
-pm = ProcessMatrix(W)
-print(f"Causal nonseparable: {not pm.is_causally_separable()}")
+print(f"Causal nonseparable: {not W.is_causally_separable()}")   # True
+print(switch_witness())   # 100 lab settings, predicted -0.1507, separable bound 0
 
 # Common cause structure (Allen et al. 2017)
 rho = QuantumCommonCause(n=2).state()
@@ -293,7 +294,8 @@ rho = QuantumCommonCause(n=2).state()
 | `QuantumCausalDAG` | Quantum causal directed acyclic graphs |
 | `QuantumMarkovChain` | Quantum Markov chains |
 | `QuantumCommonCause` | Common cause structure (Allen et al. 2017) |
-| `causal_nonseparability_witness()` | Araújo et al. (2015) witness, robustness |
+| `causal_nonseparability_witness()` | OCB-game witness for 2-party qubit processes |
+| `switch_witness()` | Measurable causal witness for the quantum switch (Araújo et al. 2015) |
 
 ---
 

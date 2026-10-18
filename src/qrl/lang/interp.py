@@ -100,7 +100,7 @@ class Process(Value):
     """A process matrix — `qrl.causal.ProcessMatrix`.
 
     `source` is the originating `QuantumSwitch` when this came from `switch(...)`,
-    which is where the readable P_win / robustness accessors come from.
+    which is where the causal witness accessors come from.
     """
     pm: object
     source: object = None
@@ -114,14 +114,25 @@ class Process(Value):
     def robustness(self):
         return self.pm.causal_nonseparability_robustness()
 
+    @property
+    def witness(self):
+        """Causal witness value of a qubit switch process (negative = certified)."""
+        if self.source is None or getattr(self.source, "target_dim", None) != 2:
+            return None
+        return self.source.witness_certificate().value(self.pm)
+
     def __str__(self) -> str:
         pw = self.p_win
         r = self.robustness
+        w = self.witness
         extra = ""
         if pw is not None:
             extra = f", P_win={pw:.4f}"
             if r is not None:
                 extra += f", robustness={r:.4f}"
+        if w is not None:
+            verdict = "certified nonseparable" if w < 0 else "not certified"
+            extra += f", witness={w:+.4f} ({verdict})"
         return f"Process({'x'.join(map(str, self.pm.input_dims))}{extra})"
 
 
@@ -374,7 +385,7 @@ class Interp:
                 t.line, t.col,
             )
         qs = QuantumSwitch(channel_A=f.cptp, channel_B=g.cptp)
-        return Process(qs.process_matrix(), source=qs, control=control.rho)
+        return Process(qs.process_matrix(control=control.rho), source=qs, control=control.rho)
 
     def _ev_PM(self, t: ast.PM, env: _Env) -> Value:
         from qrl.causal import ProcessMatrix

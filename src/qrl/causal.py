@@ -77,12 +77,6 @@ class ProcessMatrix:
     input_dims: List[int]
     output_dims: List[int]
     description: str = ""
-    # Optional analytical overrides — used when the numerical OCB score
-    # operator cannot be applied directly (e.g. switch party decomposition
-    # is target⊗control rather than A_I⊗A_O⊗B_I⊗B_O).  Set by factory
-    # functions like quantum_switch_process_matrix().
-    p_win_override: Optional[float] = None
-    causally_separable_override: Optional[bool] = None
 
     def __post_init__(self) -> None:
         n = len(self.parties)
@@ -144,20 +138,18 @@ class ProcessMatrix:
 
         For the 2-party qubit case (d_in = d_out = 2 per party), this method
         computes the OCB causal inequality value.  If it exceeds 3/4, W is
-        causally non-separable.  Full SDP-based verification for the general
-        case is not yet implemented (Gap 3 in the QRL roadmap, when
-        QuantumSwitch is added).
-
-        The quantum switch process (Gap 3) will return False here.
+        causally non-separable.  For processes shaped like the qubit quantum
+        switch (parties A, B, F with input dims [2, 2, 4] and output dims
+        [2, 2, 1]) it evaluates the switch's causal witness
+        (qrl.switch_witness); a negative value certifies nonseparability.
+        Full SDP-based verification for the general case is not implemented.
 
         Returns:
             True  if W is consistent with causal separability.
-            False if W violates the OCB causal inequality (qubit case).
-            True  (conservative) if the check is not applicable.
+            False if W violates the OCB causal inequality (qubit case) or has
+                  a negative switch-witness value.
+            True  (conservative) if the check is not applicable or inconclusive.
         """
-        if self.causally_separable_override is not None:
-            return self.causally_separable_override
-
         if len(self.parties) <= 1:
             return True
 
@@ -172,6 +164,11 @@ class ProcessMatrix:
             # OCB (2012) causal bound for the AND game with binary inputs/outputs.
             OCB_CAUSAL_BOUND = 3.0 / 4.0
             return val <= OCB_CAUSAL_BOUND + tol
+
+        # Qubit quantum switch scenario: use the shipped causal witness.
+        if self.input_dims == [2, 2, 4] and self.output_dims == [2, 2, 1]:
+            from qrl.switch_witness import switch_witness
+            return not switch_witness().certifies(self, tol=tol)
 
         # Cannot determine — assume separable (conservative default).
         return True
@@ -193,7 +190,9 @@ class ProcessMatrix:
             x=1: X-basis  (|+⟩⟨+|, |−⟩⟨−|)
 
         Classical causal bound:   P_win ≤ 3/4
-        Quantum switch achieves:  P_win = (2+√2)/4 ≈ 0.854
+        OCB process achieves:     P_win = (2+√2)/4 ≈ 0.854
+        (The quantum switch cannot exceed 3/4: its statistics can be
+        reproduced with a definite order.  See qrl.switch_witness.)
 
         Returns:
             Win probability P_win ∈ [0, 1], or None if not applicable
@@ -202,9 +201,6 @@ class ProcessMatrix:
         References:
             Oreshkov, Costa, Brukner (2012), equation (3) and Methods.
         """
-        if self.p_win_override is not None:
-            return self.p_win_override
-
         if len(self.parties) != 2:
             return None
         if self.input_dims != [2, 2] or self.output_dims != [2, 2]:
@@ -394,7 +390,10 @@ class ProcessMatrix:
 
         Returns:
             r* ≥ 0.  Zero means W is already causally separable.
-            For the quantum switch: r* = √2 − 1 ≈ 0.414.
+            (Araújo et al. report a random robustness of √2 − 1 ≈ 0.414 for
+            the OCB process with an extra maximally mixed input, App. F.  The
+            quantum switch has P_win ≤ 3/4, so this measure gives it 0; see
+            qrl.switch_witness for the switch.)
             None if causal_inequality_value() is not applicable.
 
         References:
@@ -657,8 +656,11 @@ def causal_nonseparability_witness(d: int = 2) -> np.ndarray:
     Verification:
         Causally separable W (Tr[W]=4, P_win ≤ 3/4):
             Tr[Ω·W] = 3 − 4·P_win ≥ 0  ✓
-        Quantum switch (P_win = (2+√2)/4 ≈ 0.854):
+        OCB process (P_win = (2+√2)/4 ≈ 0.854):
             Tr[Ω·W] = 3 − (2+√2) = 1−√2 ≈ −0.414  ✓
+
+    This witness cannot detect the quantum switch, which never exceeds
+    P_win = 3/4.  Use qrl.switch_witness for the switch.
 
     Args:
         d: Qubit dimension per party (default 2).
@@ -1146,13 +1148,12 @@ class QuantumSwitch:
 
     Causal properties
     -----------------
-    The quantum switch is causally non-separable: it cannot be written as a
-    convex mixture of causally ordered processes.  It achieves
-
-        P_win = (2 + √2) / 4 ≈ 0.854
-
-    in the Oreshkov-Costa-Brukner (OCB 2012) AND-game, exceeding the
-    classical causal bound of 3/4.
+    With a coherent control (e.g. |+⟩) the quantum switch is causally
+    non-separable: it cannot be written as a convex mixture of causally
+    ordered processes.  It cannot violate a causal inequality, though (its
+    OCB-game score never exceeds 3/4), so nonseparability is certified with
+    a device-dependent causal witness: witness_value() gives -0.1507 for
+    control |+⟩, and witness_certificate() lists the settings to measure.
 
     Attributes
     ----------
@@ -1346,97 +1347,105 @@ class QuantumSwitch:
     # Causal properties                                                    #
     # ------------------------------------------------------------------ #
 
-    def causal_inequality_value(self) -> float:
+    def causal_inequality_value(self) -> Optional[float]:
         """
-        Winning probability in the OCB AND causal game.
+        Not applicable: the quantum switch cannot win a causal game.
 
-        The quantum switch achieves the analytically optimal value
+        The switch is causally nonseparable, but its statistics in any
+        device-independent game (such as the OCB game, bound 3/4) can be
+        reproduced by a causally ordered process (Araújo et al. 2015, Sec. IV;
+        Oreshkov & Giarmatzi 2016).  Its nonseparability is certified with a
+        causal witness instead: see witness_value() and witness_certificate().
 
-            P_win = (2 + √2) / 4  ≈  0.854
-
-        exceeding the classical causal bound of 3/4.
-
-        Reference: Oreshkov, Costa, Brukner (2012), equation (5).
+        Returns:
+            None.
         """
-        return float((2.0 + np.sqrt(2.0)) / 4.0)
+        return None
 
-    def is_causally_separable(self) -> bool:
+    def witness_certificate(self) -> 'SwitchWitness':
         """
-        Return False — the quantum switch is causally non-separable.
+        The measurable causal witness for this switch (qubit target only).
 
-        It cannot be decomposed as a convex mixture of causally ordered
-        processes (A before B, or B before A).  This is a mathematical
-        property of the quantum switch, independent of which channels
-        A and B are chosen.
+        The certificate lists the settings (unitaries for A and B, F's
+        measurement on the control), their weights, the predicted value for
+        the switch and the bound every causally separable process satisfies.
+
+        Raises:
+            NotImplementedError: If the target is not a qubit.
         """
-        return False
+        from qrl.switch_witness import switch_witness
+        if self.target_dim != 2:
+            raise NotImplementedError("the shipped witness is for a qubit target")
+        return switch_witness()
+
+    def witness_value(self, control: Optional[np.ndarray] = None) -> float:
+        """
+        Witness value of this switch's process (control |+> by default).
+
+        Negative values certify causal nonseparability.  For control |+> the
+        value is -0.1507; for a control with no coherence (|0>, |1>, or a
+        dephased mixture) the order is definite and the value is positive.
+        """
+        return self.witness_certificate().value(self.process_matrix(control=control))
+
+    def is_causally_separable(self, control: Optional[np.ndarray] = None) -> bool:
+        """
+        Whether this switch, with the given control (default |+>), is
+        causally separable.
+
+        For unitary channels this computes the witness value: a negative value
+        certifies nonseparability.  A non-negative value does not prove
+        separability, so it returns True only conservatively (e.g. control
+        |0>, which really is definite order).
+
+        Non-unitary channels follow QRL's incoherent semantics
+        (E-Switch-Incoherent): the orders are mixed classically, which is
+        causally separable.
+        """
+        if not self.is_unitary():
+            return True
+        if self.target_dim != 2:
+            raise NotImplementedError("the shipped witness is for a qubit target")
+        return not self.witness_certificate().certifies(
+            self.process_matrix(control=control))
 
     # ------------------------------------------------------------------ #
     # Process matrix                                                       #
     # ------------------------------------------------------------------ #
 
-    def process_matrix(self) -> 'ProcessMatrix':
+    def process_matrix(
+        self,
+        control: Optional[np.ndarray] = None,
+        target: Optional[np.ndarray] = None,
+    ) -> 'ProcessMatrix':
         """
-        Compute the process matrix of the quantum switch.
+        Process matrix of the quantum switch, with parties A, B and F.
 
-        For unitary channels A = U_A, B = U_B with d-dimensional target and
-        qubit control, the process matrix is derived from the Choi-Jamiołkowski
-        representation of the switch isometry V:
+        A and B are the two slots of the switch; F receives the control and
+        the target at the end.  Subsystem order: A_I, A_O, B_I, B_O, F_c, F_t.
+        The process is the switch itself: A and B plug their operations into
+        it, so W does not depend on which unitaries they apply (Araújo et al.
+        2015, Eq. 66).
 
-            W = (d · 2) · |v⟩⟨v|    (rank-1, pure process)
-
-        where |v⟩ = (I_{2d} ⊗ V) |Φ+⟩ / √(2d) is the CJ state normalised
-        to Tr[W] = d_out_target × d_out_control = d × 2.
-
-        The resulting ProcessMatrix has:
-            parties     = ['A', 'C']
-            input_dims  = [d, 2]   (target, control)
-            output_dims = [d, 2]
+        Args:
+            control: Control state, vector or density matrix (default |+>).
+            target:  Target input state (default |0>).
 
         Returns:
-            ProcessMatrix encoding the quantum switch causal structure.
+            ProcessMatrix with parties ['A', 'B', 'F'],
+            input_dims [d, d, 2d], output_dims [d, d, 1].
 
         Raises:
-            NotImplementedError: If either channel is not unitary.
+            NotImplementedError: If either channel is not unitary (QRL's
+                coherent switch requires unitaries, rule T-Switch).
         """
         if not self.is_unitary():
             raise NotImplementedError(
                 "process_matrix() is only implemented for unitary channels; "
                 "use apply() directly for general CPTP maps"
             )
-
-        d = self.target_dim
-        V = self.switch_unitary()      # (2d, 2d)
-        N = 2 * d                       # dimension of target ⊗ control
-
-        # |Φ+⟩ = (1/√N) Σ_i |ii⟩  ∈  H_ref ⊗ H_{T⊗C}
-        phi = np.zeros(N * N, dtype=complex)
-        for i in range(N):
-            phi[i * N + i] = 1.0 / np.sqrt(N)
-
-        # CJ state: |v⟩ = (I_ref ⊗ V)|Φ+⟩,  shape (N², )
-        cj_vec = np.kron(np.eye(N, dtype=complex), V) @ phi
-
-        # W = (d × 2) |v⟩⟨v|  →  Tr[W] = d × 2  (OCB normalisation)
-        target_trace = float(d * 2)
-        W = target_trace * np.outer(cj_vec, cj_vec.conj())
-
-        return ProcessMatrix(
-            W=W,
-            parties=['A', 'C'],
-            input_dims=[d, 2],
-            output_dims=[d, 2],
-            description=(
-                f"Quantum switch process matrix "
-                f"(target d={d}, qubit control, "
-                f"P_win={(2+np.sqrt(2))/4:.3f})"
-            ),
-            # Analytical OCB results: switch exceeds classical bound 3/4.
-            # Numerical score operator does not apply here — parties are
-            # target⊗control, not A_I⊗A_O⊗B_I⊗B_O (OCB A/B decomposition).
-            p_win_override=float((2.0 + np.sqrt(2.0)) / 4.0),
-            causally_separable_override=False,
-        )
+        from qrl.switch_witness import switch_process
+        return switch_process(d=self.target_dim, control=control, target=target)
 
     # ------------------------------------------------------------------ #
     # Utility                                                              #
@@ -1444,31 +1453,21 @@ class QuantumSwitch:
 
     def __repr__(self) -> str:
         desc = f" — {self.description}" if self.description else ""
-        p_win = self.causal_inequality_value()
         return (
             f"QuantumSwitch(d={self.target_dim}, "
-            f"unitary={self.is_unitary()}, "
-            f"P_win={p_win:.3f}){desc}"
+            f"unitary={self.is_unitary()}){desc}"
         )
 
 
 def quantum_switch_process_matrix(d: int = 2) -> 'ProcessMatrix':
     """
-    Construct the process matrix of the quantum switch.
+    Construct the process matrix of the quantum switch (control |+>, target |0>).
 
-    Uses identity channels (U_A = U_B = I_d) as the local operations —
-    the causal non-separability of the switch is a property of the process
-    itself, independent of which unitaries A and B implement.
+    The parties are A and B (the two slots) and F (receives control and
+    target).  The resulting ProcessMatrix verifies, for d = 2:
 
-    The resulting ProcessMatrix verifies:
-        W.is_valid()            → True
-        W.is_causally_separable() → False
-        W.causal_inequality_value() → (2 + √2) / 4 ≈ 0.854
-
-    NOTE: The parties here are the 'A' and 'C' (target + control) spaces
-    of the switch isometry, not the OCB A/B parties.  To compare with the
-    OCB causal game score, use QuantumSwitch.causal_inequality_value()
-    which returns the analytical value (2+√2)/4 directly.
+        W.is_valid()              → True
+        W.is_causally_separable() → False   (witness value -0.1507)
 
     Args:
         d: Target space dimension (default 2 for qubits).
@@ -1477,14 +1476,10 @@ def quantum_switch_process_matrix(d: int = 2) -> 'ProcessMatrix':
         ProcessMatrix for the quantum switch.
 
     References:
-        Oreshkov, Costa, Brukner (2012), equation (5).
+        Araújo et al. (2015), arXiv:1506.03776, Eq. 66.
     """
-    I_d = np.eye(d, dtype=complex)
-    channel_A = CPTPMap(kraus_ops=[I_d], input_dim=d, output_dim=d, description="Identity")
-    channel_B = CPTPMap(kraus_ops=[I_d], input_dim=d, output_dim=d, description="Identity")
-    sw = QuantumSwitch(channel_A=channel_A, channel_B=channel_B,
-                       description="Quantum switch (identity ops)")
-    return sw.process_matrix()
+    from qrl.switch_witness import switch_process
+    return switch_process(d=d)
 
 
 # ======================================================================== #

@@ -81,7 +81,7 @@ source span.
   `Process` wrapping `QuantumSwitch.process_matrix()`, with `.p_win` /
   `.robustness` accessors). `examples/lang/switch.qrl` executes:
   `Process(2x2, P_win=0.8536, robustness=0.4142)` [corrected Oct 18 2026: hard-coded
-  OCB-process values; now `Process(2x2x4, witness=-0.1507 (certified nonseparable))`,
+  OCB-process values; now `Process(1x2x2x2, witness=-0.1694 (certified nonseparable))`,
   see qrl/switch_witness.py]. Differential test vs the
   Python API (`v.pm.W == qs.process_matrix().W`, p_win match). 6 new tests
   (79 lang tests total).

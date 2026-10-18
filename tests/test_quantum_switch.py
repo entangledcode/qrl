@@ -8,9 +8,9 @@ Covers:
   - apply() incoherent switch (CPTP channels)
   - apply_and_trace_control()
   - causal_inequality_value() is None (the switch cannot win a causal game)
-  - causal witness: -0.1507 for control |+>, not certified for |0>
+  - causal witness of the switch construct: -0.1694
   - is_causally_separable() computed from the witness
-  - process_matrix() validity (parties A, B, F)
+  - process_matrix() validity (parties P, A, B, F)
   - Comparison of A-then-B vs B-then-A orders
 """
 
@@ -314,10 +314,10 @@ def test_causal_inequality_value_not_applicable():
     assert sw.causal_inequality_value() is None
 
 
-def test_witness_value_certifies_switch_with_plus_control():
-    """Witness value -0.1507 < 0 for control |+> (Araújo et al. 2015, Sec. V B)."""
+def test_witness_value_certifies_the_switch_construct():
+    """Witness value -0.1694 < 0 (four-party construct, control from P)."""
     sw = QuantumSwitch(channel_A=_phi_H(), channel_B=_phi_Z())
-    assert np.isclose(sw.witness_value(), -0.150711, atol=1e-5)
+    assert np.isclose(sw.witness_value(), -0.169408, atol=1e-5)
 
 
 def test_witness_value_does_not_depend_on_the_unitaries():
@@ -327,11 +327,11 @@ def test_witness_value_does_not_depend_on_the_unitaries():
     assert np.isclose(a, b, atol=1e-12)
 
 
-def test_witness_value_not_certified_for_definite_control():
-    """Control |0> means definite order A then B: no certificate."""
-    sw = QuantumSwitch(channel_A=_phi_X(), channel_B=_phi_Z())
-    assert sw.witness_value(control=zero) >= 0
-    assert sw.is_causally_separable(control=zero) is True
+def test_process_matrix_does_not_depend_on_control_or_unitaries():
+    """The construct takes the control from P; A and B plug their operations in."""
+    a = QuantumSwitch(channel_A=_phi_X(), channel_B=_phi_Z()).process_matrix()
+    b = QuantumSwitch(channel_A=_phi_I(), channel_B=_phi_H()).process_matrix()
+    assert np.allclose(a.W, b.W)
 
 
 def test_is_causally_separable_true_for_non_unitary():
@@ -374,14 +374,14 @@ def test_process_matrix_is_psd():
 
 
 def test_process_matrix_trace():
-    """Tr[W] = d_AO × d_BO = 2 × 2 = 4."""
+    """Tr[W] = d_PO × d_AO × d_BO = 2 × 2 × 2 = 8."""
     sw = QuantumSwitch(channel_A=_phi_H(), channel_B=_phi_Z())
     pm = sw.process_matrix()
-    assert np.isclose(np.trace(pm.W).real, 4.0, atol=1e-8)
+    assert np.isclose(np.trace(pm.W).real, 8.0, atol=1e-8)
 
 
 def test_process_matrix_shape():
-    """W on A_I A_O B_I B_O F_c F_t → 64×64."""
+    """W on P_O A_I A_O B_I B_O F → 64×64."""
     sw = QuantumSwitch(channel_A=_phi_X(), channel_B=_phi_Z())
     pm = sw.process_matrix()
     assert pm.W.shape == (64, 64)
@@ -390,9 +390,9 @@ def test_process_matrix_shape():
 def test_process_matrix_parties():
     sw = QuantumSwitch(channel_A=_phi_X(), channel_B=_phi_Z())
     pm = sw.process_matrix()
-    assert pm.parties == ['A', 'B', 'F']
-    assert pm.input_dims == [2, 2, 4]
-    assert pm.output_dims == [2, 2, 1]
+    assert pm.parties == ['P', 'A', 'B', 'F']
+    assert pm.input_dims == [1, 2, 2, 2]
+    assert pm.output_dims == [2, 2, 2, 1]
 
 
 def test_process_matrix_is_causally_nonseparable():
@@ -400,13 +400,13 @@ def test_process_matrix_is_causally_nonseparable():
     assert pm.is_causally_separable() is False
 
 
-def test_process_matrix_is_rank_one():
-    """Pure process: W = scalar * |v⟩⟨v| → one nonzero eigenvalue."""
+def test_process_matrix_has_rank_two():
+    """Pure before the target is discarded: one branch per discarded target value."""
     sw = QuantumSwitch(channel_A=_phi_X(), channel_B=_phi_Z())
     pm = sw.process_matrix()
     eigs = pm.eigenvalues()
     nonzero = eigs[eigs > 1e-8]
-    assert len(nonzero) == 1
+    assert len(nonzero) == 2
 
 
 def test_process_matrix_raises_for_non_unitary():

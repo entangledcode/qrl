@@ -116,7 +116,7 @@ class Process(Value):
 
     @property
     def witness(self):
-        """Causal witness value of a qubit switch process (negative = certified)."""
+        """Causal witness value of the qubit switch construct (negative = certified)."""
         if self.source is None or getattr(self.source, "target_dim", None) != 2:
             return None
         return self.source.witness_certificate().value(self.pm)
@@ -385,7 +385,8 @@ class Interp:
                 t.line, t.col,
             )
         qs = QuantumSwitch(channel_A=f.cptp, channel_B=g.cptp)
-        return Process(qs.process_matrix(control=control.rho), source=qs, control=control.rho)
+        # Switch(d) denotes the construct; the control is P's input when it runs.
+        return Process(qs.process_matrix(), source=qs, control=control.rho)
 
     def _ev_PM(self, t: ast.PM, env: _Env) -> Value:
         from qrl.causal import ProcessMatrix

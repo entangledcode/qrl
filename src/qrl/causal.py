@@ -139,8 +139,8 @@ class ProcessMatrix:
         For the 2-party qubit case (d_in = d_out = 2 per party), this method
         computes the OCB causal inequality value.  If it exceeds 3/4, W is
         causally non-separable.  For processes shaped like the qubit quantum
-        switch (parties A, B, F with input dims [2, 2, 4] and output dims
-        [2, 2, 1]) it evaluates the switch's causal witness
+        switch construct (parties P, A, B, F with input dims [1, 2, 2, 2] and
+        output dims [2, 2, 2, 1]) it evaluates the switch's causal witness
         (qrl.switch_witness); a negative value certifies nonseparability.
         Full SDP-based verification for the general case is not implemented.
 
@@ -166,7 +166,7 @@ class ProcessMatrix:
             return val <= OCB_CAUSAL_BOUND + tol
 
         # Qubit quantum switch scenario: use the shipped causal witness.
-        if self.input_dims == [2, 2, 4] and self.output_dims == [2, 2, 1]:
+        if self.input_dims == [1, 2, 2, 2] and self.output_dims == [2, 2, 2, 1]:
             from qrl.switch_witness import switch_witness
             return not switch_witness().certifies(self, tol=tol)
 
@@ -1148,12 +1148,12 @@ class QuantumSwitch:
 
     Causal properties
     -----------------
-    With a coherent control (e.g. |+⟩) the quantum switch is causally
-    non-separable: it cannot be written as a convex mixture of causally
-    ordered processes.  It cannot violate a causal inequality, though (its
-    OCB-game score never exceeds 3/4), so nonseparability is certified with
-    a device-dependent causal witness: witness_value() gives -0.1507 for
-    control |+⟩, and witness_certificate() lists the settings to measure.
+    The switch construct, with the control supplied by a past party P, is
+    causally non-separable: it cannot be written as a convex mixture of
+    causally ordered processes.  It cannot violate a causal inequality,
+    though (its OCB-game score never exceeds 3/4), so nonseparability is
+    certified with a device-dependent causal witness: witness_value() gives
+    -0.1694, and witness_certificate() lists the settings to measure.
 
     Attributes
     ----------
@@ -1378,25 +1378,23 @@ class QuantumSwitch:
             raise NotImplementedError("the shipped witness is for a qubit target")
         return switch_witness()
 
-    def witness_value(self, control: Optional[np.ndarray] = None) -> float:
+    def witness_value(self) -> float:
         """
-        Witness value of this switch's process (control |+> by default).
+        Witness value of the switch construct (-0.1694).
 
-        Negative values certify causal nonseparability.  For control |+> the
-        value is -0.1507; for a control with no coherence (|0>, |1>, or a
-        dephased mixture) the order is definite and the value is positive.
+        Negative values certify causal nonseparability.  The value belongs to
+        the construct, with the control supplied by a past party P: it does
+        not depend on the control a particular run uses.
         """
-        return self.witness_certificate().value(self.process_matrix(control=control))
+        return self.witness_certificate().value(self.process_matrix())
 
-    def is_causally_separable(self, control: Optional[np.ndarray] = None) -> bool:
+    def is_causally_separable(self) -> bool:
         """
-        Whether this switch, with the given control (default |+>), is
-        causally separable.
+        Whether the switch construct is causally separable.
 
         For unitary channels this computes the witness value: a negative value
-        certifies nonseparability.  A non-negative value does not prove
-        separability, so it returns True only conservatively (e.g. control
-        |0>, which really is definite order).
+        certifies nonseparability.  A non-negative value would not prove
+        separability, so True is only returned conservatively.
 
         Non-unitary channels follow QRL's incoherent semantics
         (E-Switch-Incoherent): the orders are mixed classically, which is
@@ -1406,34 +1404,29 @@ class QuantumSwitch:
             return True
         if self.target_dim != 2:
             raise NotImplementedError("the shipped witness is for a qubit target")
-        return not self.witness_certificate().certifies(
-            self.process_matrix(control=control))
+        return not self.witness_certificate().certifies(self.process_matrix())
 
     # ------------------------------------------------------------------ #
     # Process matrix                                                       #
     # ------------------------------------------------------------------ #
 
-    def process_matrix(
-        self,
-        control: Optional[np.ndarray] = None,
-        target: Optional[np.ndarray] = None,
-    ) -> 'ProcessMatrix':
+    def process_matrix(self, target: Optional[np.ndarray] = None) -> 'ProcessMatrix':
         """
-        Process matrix of the quantum switch, with parties A, B and F.
+        Process matrix of the quantum switch construct, parties P, A, B, F.
 
-        A and B are the two slots of the switch; F receives the control and
-        the target at the end.  Subsystem order: A_I, A_O, B_I, B_O, F_c, F_t.
-        The process is the switch itself: A and B plug their operations into
-        it, so W does not depend on which unitaries they apply (Araújo et al.
-        2015, Eq. 66).
+        P prepares the control (the construct's input), A and B are the two
+        slots, F receives the control at the end; the target enters the first
+        slot to act and is discarded after the second.  Subsystem order:
+        P_O, A_I, A_O, B_I, B_O, F.  The process is the construct itself: it
+        does not depend on which unitaries A and B apply, nor on the control
+        a particular run uses (Araújo et al. 2015).
 
         Args:
-            control: Control state, vector or density matrix (default |+>).
-            target:  Target input state (default |0>).
+            target: Target input state (default |0>).
 
         Returns:
-            ProcessMatrix with parties ['A', 'B', 'F'],
-            input_dims [d, d, 2d], output_dims [d, d, 1].
+            ProcessMatrix with parties ['P', 'A', 'B', 'F'],
+            input_dims [1, d, d, 2], output_dims [2, d, d, 1].
 
         Raises:
             NotImplementedError: If either channel is not unitary (QRL's
@@ -1445,7 +1438,7 @@ class QuantumSwitch:
                 "use apply() directly for general CPTP maps"
             )
         from qrl.switch_witness import switch_process
-        return switch_process(d=self.target_dim, control=control, target=target)
+        return switch_process(d=self.target_dim, target=target)
 
     # ------------------------------------------------------------------ #
     # Utility                                                              #
@@ -1461,13 +1454,13 @@ class QuantumSwitch:
 
 def quantum_switch_process_matrix(d: int = 2) -> 'ProcessMatrix':
     """
-    Construct the process matrix of the quantum switch (control |+>, target |0>).
+    Construct the process matrix of the quantum switch construct (target |0>).
 
-    The parties are A and B (the two slots) and F (receives control and
-    target).  The resulting ProcessMatrix verifies, for d = 2:
+    The parties are P (prepares the control), A and B (the two slots) and F
+    (receives the control).  The resulting ProcessMatrix verifies, for d = 2:
 
         W.is_valid()              → True
-        W.is_causally_separable() → False   (witness value -0.1507)
+        W.is_causally_separable() → False   (witness value -0.1694)
 
     Args:
         d: Target space dimension (default 2 for qubits).
@@ -1476,7 +1469,7 @@ def quantum_switch_process_matrix(d: int = 2) -> 'ProcessMatrix':
         ProcessMatrix for the quantum switch.
 
     References:
-        Araújo et al. (2015), arXiv:1506.03776, Eq. 66.
+        Araújo et al. (2015), arXiv:1506.03776.
     """
     from qrl.switch_witness import switch_process
     return switch_process(d=d)

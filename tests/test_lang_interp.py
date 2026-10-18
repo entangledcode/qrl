@@ -140,7 +140,7 @@ def test_switch_example_is_certified_by_its_witness():
     v = run(open("examples/lang/switch.qrl").read())
     assert isinstance(v, Process)
     assert v.p_win is None                      # the switch can't win a causal game
-    assert abs(v.witness - (-0.150711)) < 1e-5  # Araújo et al. 2015, Sec. V B
+    assert abs(v.witness - (-0.169408)) < 1e-5  # four-party construct witness
     assert "certified nonseparable" in str(v)
 
 
@@ -156,13 +156,14 @@ def test_switch_matches_the_python_api_differentially():
     assert np.allclose(v.pm.W, qs.process_matrix().W)
 
 
-def test_switch_with_definite_control_is_not_certified():
-    # Control |0> fixes the order (A then B): the process is causally
-    # separable, so the witness must not certify it, even though the term
-    # type-checks as Switch(2).
-    v = run("let U = cptp([[1, 0], [0, -1]]) in switch(U, U, |0>)")
-    assert v.witness >= 0
-    assert "not certified" in str(v)
+def test_switch_certificate_belongs_to_the_construct():
+    # Switch(d) describes the construct, with the control as an input. A run
+    # with control |0> is definite order (A then B), but the type certifies the
+    # construct, so the certificate is the same whatever control is supplied.
+    v0 = run("let U = cptp([[1, 0], [0, -1]]) in switch(U, U, |0>)")
+    vp = run("let U = cptp([[1, 0], [0, -1]]) in switch(U, U, |+>)")
+    assert v0.witness < 0 and abs(v0.witness - vp.witness) < 1e-12
+    assert np.allclose(v0.control, [[1, 0], [0, 0]])   # the run's control is kept
 
 
 # ---- process matrices, causal DAGs, do (session C) -----------------

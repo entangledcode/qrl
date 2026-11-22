@@ -22,6 +22,10 @@ linear algebra and eigenvalues only:
     ClassicalControlCertificate(W_A, W_B)     W = W_A + W_B, one PSD part per order
     QuantumControlCertificate(...)            Wechs's four matrices W_(K, k)
 
+and non-membership in QC-QC by
+
+    CausalInequalityCertificate(instruments)  OCB game won with probability > 3/4
+
 Certificates convert along the inclusions (fixed order -> classical control ->
 quantum control), which is how the refinement types QC-FO <: QC-CC <: QC-QC
 are realised.  find_certificate() searches for one by semidefinite
@@ -266,6 +270,79 @@ def _comb_ok(Wk: NamedOp, k: str, dims, tol: float, top: bool) -> bool:
         one_P = np.eye(dims["P"], dtype=complex)
         return bool(np.allclose(first_red.trace([k + "I"], dims).mat, one_P, atol=tol))
     return True
+
+
+@dataclass(frozen=True)
+class CausalInequalityCertificate:
+    """W is NOT a quantum circuit with quantum control of causal order (QC-QC):
+    with the given local instruments, W wins the OCB causal game with
+    probability above 3/4.  Every QC-QC process, and so every causally
+    separable or fixed-order one, gives at most 3/4 (Wechs et al. 2021,
+    Prop. 8; Oreshkov, Costa, Brukner 2012).
+
+    instruments_A[(x, a)] and instruments_B[((y, b'), b)] are transposed Choi
+    operators on each party's (input, output).  For processes with parties
+    P and F, P prepares p_state (transposed, i.e. conj(rho)) and F is
+    discarded."""
+    instruments_A: Tuple[Tuple[Tuple[int, int], np.ndarray], ...]
+    instruments_B: Tuple[Tuple[Tuple[Tuple[int, int], int], np.ndarray], ...]
+    p_state: Optional[np.ndarray] = None
+
+    BOUND = 0.75
+
+    def _valid_instruments(self, dims, tol) -> bool:
+        A, B = dict(self.instruments_A), dict(self.instruments_B)
+        for inst, k, settings in ((A, "A", [(x,) for x in (0, 1)]),
+                                  (B, "B", [((y, bp),) for y in (0, 1) for bp in (0, 1)])):
+            dI, dO = dims[k + "I"], dims[k + "O"]
+            for (setting,) in settings:
+                total = np.zeros((dI * dO, dI * dO), dtype=complex)
+                for o in (0, 1):
+                    J = inst.get((setting, o))
+                    if J is None or J.shape != (dI * dO, dI * dO) or not _psd(J, tol):
+                        return False
+                    total = total + J
+                red = NamedOp(total, (k + "I", k + "O")).trace([k + "O"], dims)
+                if not np.allclose(red.mat, np.eye(dI), atol=tol):     # trace preserving
+                    return False
+        return True
+
+    def value(self, pm: ProcessMatrix) -> float:
+        """OCB game winning probability of pm with these instruments."""
+        from qrl.causal import ocb_wins
+        W, dims = _canonical(pm)
+        rho = self.p_state if self.p_state is not None else np.eye(dims["P"]) / dims["P"]
+        # contract P with its preparation and discard F: W_AB on A_I A_O B_I B_O
+        T = NamedOp(np.kron(rho, np.eye(W.shape[0] // dims["P"])) @ W, SYS)
+        WAB = T.trace(["P", "F"], dims).mat
+        A, B = dict(self.instruments_A), dict(self.instruments_B)
+        p = 0.0
+        for x in (0, 1):
+            for y in (0, 1):
+                for bp in (0, 1):
+                    for a in (0, 1):
+                        for b in (0, 1):
+                            if ocb_wins(x, y, bp, a, b):
+                                M = np.kron(A[(x, a)], B[((y, bp), b)])
+                                p += np.trace(M @ WAB).real / 8
+        return float(p)
+
+    def check(self, pm: ProcessMatrix, tol: float = 1e-8) -> bool:
+        dims = scenario_dims(pm)
+        if not pm.is_valid():
+            return False
+        if self.p_state is not None and not _psd(self.p_state, tol):
+            return False
+        if not self._valid_instruments(dims, tol):
+            return False
+        return self.value(pm) > self.BOUND + tol
+
+
+def ocb_certificate() -> CausalInequalityCertificate:
+    """OCB's strategy as a certificate that a qubit process is outside QC-QC."""
+    from qrl.causal import ocb_strategy
+    A, B = ocb_strategy()
+    return CausalInequalityCertificate(tuple(A.items()), tuple(B.items()))
 
 
 # ------------------------------------------------------------------ #

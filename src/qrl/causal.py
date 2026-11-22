@@ -33,6 +33,7 @@ Author: David Coldeira (dcoldeira@gmail.com)
 License: MIT
 """
 
+import functools
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -223,81 +224,29 @@ class ProcessMatrix:
 
     def causal_inequality_value(self) -> Optional[float]:
         """
-        Compute the winning probability in the OCB binary causal game.
+        Winning probability in the Oreshkov-Costa-Brukner (2012) causal game,
+        with OCB's strategy.  The first party plays Alice, the second Bob.
 
-        For a 2-party process with d_in = d_out = 2 (qubits), computes the
-        success probability
+        Alice gets a bit x, Bob gets bits y and b'.  If b' = 0, Bob must
+        output x; if b' = 1, Alice must output y (inputs uniform).  Every
+        process with definite or classically controlled order, and every
+        quantum circuit with quantum control of order (such as the quantum
+        switch), gives P_win <= 3/4 (Wechs et al. 2021, Prop. 8).
 
-            P_win = (1/4) * Tr[W * S]
-
-        for the Oreshkov-Costa-Brukner (2012) causal game with win condition
-        a ⊕ b = x ∧ y (XOR of outputs equals AND of inputs).
-
-        The score operator S uses the optimal Z/X projective measurements:
-            x=0: Z-basis  (|0⟩⟨0|, |1⟩⟨1|)
-            x=1: X-basis  (|+⟩⟨+|, |−⟩⟨−|)
-
-        Classical causal bound:   P_win ≤ 3/4
-        OCB process achieves:     P_win = (2+√2)/4 ≈ 0.854
-        (The quantum switch cannot exceed 3/4: its statistics can be
-        reproduced with a definite order.  See qrl.switch_witness.)
+        Strategy (OCB 2012): Alice measures her input in Z (outcome a, her
+        guess of y) and prepares |x> in Z.  If b' = 0, Bob measures in Z and
+        outputs the result; if b' = 1, he measures in X (outcome b1) and
+        prepares |y XOR b1> in Z.  The OCB process (ocb_process()) reaches
+        P_win = (2 + sqrt 2)/4 ~ 0.854.
 
         Returns:
-            Win probability P_win ∈ [0, 1], or None if not applicable
-            (wrong number of parties or dimensions).
-
-        References:
-            Oreshkov, Costa, Brukner (2012), equation (3) and Methods.
+            P_win in [0, 1], or None unless the process has two qubit parties.
         """
         if len(self.parties) != 2:
             return None
         if self.input_dims != [2, 2] or self.output_dims != [2, 2]:
             return None
-
-        # ------------------------------------------------------------------ #
-        # Build Choi operators for the optimal instruments (4×4 each).        #
-        # Each J^{x,a} acts on H_{party_I} ⊗ H_{party_O}.                    #
-        # Optimal choice: Z-basis for x=0, X-basis for x=1.                  #
-        # ------------------------------------------------------------------ #
-        zero = np.array([1.0, 0.0])
-        one  = np.array([0.0, 1.0])
-        plus  = np.array([1.0,  1.0]) / np.sqrt(2)
-        minus = np.array([1.0, -1.0]) / np.sqrt(2)
-        I2 = np.eye(2)
-
-        # J[x, a]: Choi operator of M^{x,a}: ρ → ⟨m_a|ρ|m_a⟩ * |m_a⟩⟨m_a|
-        # where |m_a⟩ is the a-th basis vector for setting x.
-        #
-        # Choi(M^{x,a}) = ∑_i |i⟩⟨i| ⊗ M^{x,a}(|i⟩⟨i|)
-        #               = I ⊗ |m_a⟩⟨m_a| * ⟨m_a|I|m_a⟩ ... simplified:
-        # For a projector P_a: Choi = I_in ⊗ P_a * (trace of P_a applied to I)
-        # More precisely: Choi(ρ → tr[P_a ρ] |m_a⟩⟨m_a|) = |m_a⟩⟨m_a|_I ⊗ |m_a⟩⟨m_a|_O
-        # (for the Z-basis case where basis vectors equal output vectors).
-        J = {}
-        # x=0 (Z-basis): J^{0,a} = |a⟩⟨a|_in ⊗ |a⟩⟨a|_out
-        J[(0, 0)] = np.kron(np.outer(zero, zero), np.outer(zero, zero))
-        J[(0, 1)] = np.kron(np.outer(one,  one),  np.outer(one,  one))
-        # x=1 (X-basis): J^{1,a} = (I ⊗ |m_a⟩⟨m_a|) / 2
-        # because ⟨m_a|i⟩ contributes equally from both basis states.
-        J[(1, 0)] = np.kron(I2, np.outer(plus,  plus))  / 2.0
-        J[(1, 1)] = np.kron(I2, np.outer(minus, minus)) / 2.0
-
-        # ------------------------------------------------------------------ #
-        # Score operator S = ∑_{winning (x,y,a,b)} J_A^{x,a} ⊗ J_B^{y,b}   #
-        # Win condition: a ⊕ b = x AND y                                     #
-        # ------------------------------------------------------------------ #
-        winning = [
-            (0, 0, 0, 0), (0, 0, 1, 1),   # x=0,y=0: need a=b
-            (0, 1, 0, 0), (0, 1, 1, 1),   # x=0,y=1: need a=b
-            (1, 0, 0, 0), (1, 0, 1, 1),   # x=1,y=0: need a=b
-            (1, 1, 0, 1), (1, 1, 1, 0),   # x=1,y=1: need a≠b
-        ]
-        S = np.zeros((16, 16), dtype=complex)
-        for x, y, a, b in winning:
-            S += np.kron(J[(x, a)], J[(y, b)])
-
-        # P_win = (1/4) * Tr[W * S]
-        p_win = float(np.trace(self.W @ S).real / 4.0)
+        p_win = float(np.trace(self.W @ ocb_score_operator()).real / 4.0)
         return float(np.clip(p_win, 0.0, 1.0))
 
     # ------------------------------------------------------------------ #
@@ -425,27 +374,17 @@ class ProcessMatrix:
 
     def causal_nonseparability_robustness(self) -> Optional[float]:
         """
-        Causal nonseparability robustness (OCB-based).
+        Scaled violation of the OCB causal inequality: max(0, 4 (P_win - 3/4)).
 
-        The robustness r*(W) is the minimum noise fraction needed to render W
-        causally separable under mixing with the maximally mixed process:
-
-            (W + r* · I_{d^4}/d^2) / (1 + r*)  ∈  causally separable
-
-        Derived from the OCB causal inequality:
-
-            r*(W) = max(0,  4 · (P_win(W) − 3/4))
+        Despite the name, this is not the robustness of causal
+        nonseparability (the noise needed to make W causally separable,
+        Araujo et al. 2015, Sec. IV); it is zero for every process that
+        cannot violate the OCB inequality, including the quantum switch.
+        For the OCB process it equals sqrt 2 - 1.  Use qrl.switch_witness
+        for the switch.
 
         Returns:
-            r* ≥ 0.  Zero means W is already causally separable.
-            (Araújo et al. report a random robustness of √2 − 1 ≈ 0.414 for
-            the OCB process with an extra maximally mixed input, App. F.  The
-            quantum switch has P_win ≤ 3/4, so this measure gives it 0; see
-            qrl.switch_witness for the switch.)
-            None if causal_inequality_value() is not applicable.
-
-        References:
-            Araújo et al. (2015), arXiv:1506.03776, Section IV.
+            Value >= 0, or None if causal_inequality_value() is not applicable.
         """
         p_win = self.causal_inequality_value()
         if p_win is None:
@@ -723,29 +662,69 @@ def causal_nonseparability_witness(d: int = 2) -> np.ndarray:
         raise NotImplementedError(
             "causal_nonseparability_witness only implemented for d=2 (qubits)"
         )
-    zero  = np.array([1.0, 0.0])
-    one   = np.array([0.0, 1.0])
-    plus  = np.array([1.0,  1.0]) / np.sqrt(2)
-    minus = np.array([1.0, -1.0]) / np.sqrt(2)
-    I2    = np.eye(2)
+    return (3.0 / 4.0) * np.eye(d**4, dtype=complex) - ocb_score_operator()
 
-    J = {}
-    J[(0, 0)] = np.kron(np.outer(zero, zero), np.outer(zero, zero))
-    J[(0, 1)] = np.kron(np.outer(one,  one),  np.outer(one,  one))
-    J[(1, 0)] = np.kron(I2, np.outer(plus,  plus))  / 2.0
-    J[(1, 1)] = np.kron(I2, np.outer(minus, minus)) / 2.0
 
-    winning = [
-        (0, 0, 0, 0), (0, 0, 1, 1),
-        (0, 1, 0, 0), (0, 1, 1, 1),
-        (1, 0, 0, 0), (1, 0, 1, 1),
-        (1, 1, 0, 1), (1, 1, 1, 0),
-    ]
-    S = np.zeros((d**4, d**4), dtype=complex)
-    for x, y, a, b in winning:
-        S += np.kron(J[(x, a)], J[(y, b)])
+def ocb_strategy():
+    """
+    OCB's strategy for their causal game, as transposed Choi operators on
+    (input, output) of each party (all real, so the convention does not
+    matter here):
 
-    return (3.0 / 4.0) * np.eye(d**4, dtype=complex) - S
+        A[(x, a)]        Alice, input x, outcome a
+        B[((y, b'), b)]  Bob, inputs y and b', outcome b
+
+    Reference: Oreshkov, Costa, Brukner (2012), Nat. Commun. 3, 1092.
+    """
+    z = (np.array([1.0, 0.0]), np.array([0.0, 1.0]))
+    xb = (np.array([1.0, 1.0]) / np.sqrt(2), np.array([1.0, -1.0]) / np.sqrt(2))
+    P = lambda v: np.outer(v, v)
+    A = {(x, a): np.kron(P(z[a]), P(z[x])) for x in (0, 1) for a in (0, 1)}
+    B = {}
+    for y in (0, 1):
+        for b in (0, 1):
+            B[((y, 0), b)] = np.kron(P(z[b]), np.eye(2) / 2)        # guess x
+            B[((y, 1), b)] = np.kron(P(xb[b]), P(z[y ^ b]))         # send y
+    return A, B
+
+
+def ocb_wins(x: int, y: int, bp: int, a: int, b: int) -> bool:
+    """OCB game: if b' = 0 Bob must output x, if b' = 1 Alice must output y."""
+    return (b == x) if bp == 0 else (a == y)
+
+
+def ocb_score_operator(strategy=None) -> np.ndarray:
+    """S with P_win(W) = Tr[W S] / 4 for 2-party qubit processes (Tr W = 4)."""
+    A, B = strategy if strategy is not None else ocb_strategy()
+    S = np.zeros((16, 16), dtype=complex)
+    for x in (0, 1):
+        for y in (0, 1):
+            for bp in (0, 1):
+                for a in (0, 1):
+                    for b in (0, 1):
+                        if ocb_wins(x, y, bp, a, b):
+                            S += np.kron(A[(x, a)], B[((y, bp), b)]) / 2.0   # 4 * 1/8
+    return S
+
+
+def ocb_process() -> "ProcessMatrix":
+    """
+    The OCB process (Oreshkov, Costa, Brukner 2012):
+
+        W = 1/4 [ 1 + (Z_{A_O} Z_{B_I} + Z_{A_I} X_{B_I} Z_{B_O}) / sqrt 2 ]
+
+    on A_I A_O B_I B_O.  A valid process that violates the OCB causal
+    inequality, P_win = (2 + sqrt 2)/4, so it is not a quantum circuit with
+    quantum control of causal order (it is outside QC-QC).
+    """
+    I = np.eye(2)
+    X = np.array([[0.0, 1.0], [1.0, 0.0]])
+    Z = np.diag([1.0, -1.0])
+    k = lambda *m: functools.reduce(np.kron, m)
+    W = (k(I, I, I, I) + (k(I, Z, Z, I) + k(Z, I, X, Z)) / np.sqrt(2)) / 4
+    return ProcessMatrix(W=W.astype(complex), parties=["A", "B"],
+                         input_dims=[2, 2], output_dims=[2, 2],
+                         description="OCB process (violates the OCB causal inequality)")
 
 
 # ================================================================== #

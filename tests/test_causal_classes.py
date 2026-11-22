@@ -8,9 +8,17 @@ Checks need only numpy; the SDP search tests are skipped without cvxpy.
 import numpy as np
 import pytest
 
-from qrl.causal import ProcessMatrix, definite_order_process
+from qrl.causal import (
+    ProcessMatrix,
+    causal_nonseparability_witness,
+    definite_order_process,
+    identity_process,
+    ocb_process,
+)
 from qrl.causal_classes import (
     CLASSICAL_CONTROL,
+    CausalInequalityCertificate,
+    ocb_certificate,
     QUANTUM_CONTROL,
     ClassicalControlCertificate,
     FixedOrderCertificate,
@@ -133,8 +141,81 @@ def test_certificates_fail_on_a_causal_loop():
 
 
 # ------------------------------------------------------------------ #
+# Outside QC-QC: the OCB causal inequality                             #
+# ------------------------------------------------------------------ #
+
+def test_ocb_process_values_match_the_literature():
+    W = ocb_process()
+    assert W.is_valid()
+    assert np.isclose(W.causal_inequality_value(), (2 + np.sqrt(2)) / 4)
+    assert np.isclose(W.witness_value(causal_nonseparability_witness()), 1 - np.sqrt(2))
+    assert np.isclose(identity_process(n_parties=2).causal_inequality_value(), 0.5)
+    assert np.isclose(definite_order_process("AB").causal_inequality_value(), 0.75)
+
+
+def test_ocb_process_is_certified_outside_quantum_control():
+    c = ocb_certificate()
+    assert c.check(ocb_process())
+    assert fixed_order_certificate(ocb_process()) is None
+
+
+def test_causal_inequality_certificate_fails_inside_quantum_control():
+    c = ocb_certificate()
+    assert not c.check(definite_order_process("AB"))
+    assert not c.check(switch_process(2))                 # QC-QC: at most 3/4
+    pm, _ = _p_controlled()
+    assert not c.check(pm)
+
+
+def test_causal_inequality_certificate_rejects_invalid_instruments():
+    c = ocb_certificate()
+    A = dict(c.instruments_A)
+    A[(0, 0)] = 2 * A[(0, 0)]                              # not trace preserving
+    assert not CausalInequalityCertificate(tuple(A.items()), c.instruments_B).check(ocb_process())
+
+
+def test_ocb_game_never_beats_three_quarters_on_causally_ordered_processes():
+    c = ocb_certificate()
+    for _ in range(50):
+        for first in "AB":
+            w = _branch(first)                            # A_I A_O B_I B_O F
+            W = w.reshape(16, 2, 16, 2).trace(axis1=1, axis2=3)   # discard F
+            pm = ProcessMatrix(W=W, parties=["A", "B"], input_dims=[2, 2], output_dims=[2, 2])
+            assert c.value(pm) <= 0.75 + 1e-9
+
+
+# ------------------------------------------------------------------ #
 # SDP search (needs cvxpy)                                             #
 # ------------------------------------------------------------------ #
+
+def test_ocb_bound_holds_over_all_of_quantum_control():
+    """With OCB's instruments, no QC-QC process beats 3/4 (Wechs et al. Prop. 8)."""
+    cp = pytest.importorskip("cvxpy")
+    from qrl.causal import ocb_score_operator
+    from qrl.causal_classes import _cp_kron_id, _cp_ptrace
+    dims = {"P": 1, "AI": 2, "AO": 2, "BI": 2, "BO": 2, "F": 1}
+    n = lambda nm: int(np.prod([dims[q] for q in nm]))
+    V = {k: cp.Variable((n(nm), n(nm)), hermitian=True) for k, nm in
+         (("0A", ("P", "AI")), ("0B", ("P", "BI")),
+          ("AB", ("P", "AI", "AO", "BI")), ("BA", ("P", "AI", "BI", "BO")))}
+    t0A, _ = _cp_ptrace(V["0A"], ("P", "AI"), ["AI"], dims)
+    t0B, _ = _cp_ptrace(V["0B"], ("P", "BI"), ["BI"], dims)
+    lAB, _ = _cp_ptrace(V["AB"], ("P", "AI", "AO", "BI"), ["BI"], dims)
+    rAB, _ = _cp_kron_id(V["0A"], ("P", "AI"), "AO", dims)
+    lBA, _ = _cp_ptrace(V["BA"], ("P", "AI", "BI", "BO"), ["AI"], dims)
+    rBA, _ = _cp_kron_id(V["0B"], ("P", "BI"), "BO", dims)
+    xAB, _ = _cp_kron_id(V["AB"], ("P", "AI", "AO", "BI"), "BO", dims)
+    xBA, _ = _cp_kron_id(V["BA"], ("P", "AI", "BI", "BO"), "AO", dims)
+    W = xAB + xBA                                          # F trivial: W = Tr_F W
+    cons = [v >> 0 for v in V.values()] + [t0A + t0B == np.eye(1), lAB == rAB, lBA == rBA]
+    prob = cp.Problem(cp.Maximize(cp.real(cp.trace(W @ ocb_score_operator())) / 4), cons)
+    prob.solve(solver="SCS", eps=1e-8)
+    assert prob.value <= 0.75 + 1e-6
+
+
+def test_search_finds_no_quantum_control_certificate_for_ocb():
+    pytest.importorskip("cvxpy")
+    assert find_certificate(ocb_process(), QUANTUM_CONTROL) is None
 
 def test_search_finds_the_right_classes():
     pytest.importorskip("cvxpy")

@@ -5,8 +5,8 @@
 *Formerly known as QPL (Quantum Process Language) — renamed January 2026 to avoid conflict with Selinger's QPL (2004)*
 
 [![Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18292199-blue)](https://doi.org/10.5281/zenodo.18292199)
-[![Tests](https://img.shields.io/badge/Tests-968%20passing-brightgreen)](tests/)
-[![Lines](https://img.shields.io/badge/Code-~15100%20lines-blue)](src/)
+[![Tests](https://img.shields.io/badge/Tests-1042%20passing-brightgreen)](tests/)
+[![Lines](https://img.shields.io/badge/Code-~18000%20lines-blue)](src/)
 [![Photonic](https://img.shields.io/badge/Photonic-Verified-purple)](examples/quandela/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/)
@@ -31,6 +31,43 @@ Unlike gate-based languages (Qiskit, Cirq, Q#), QRL expresses quantum programs a
 - The cluster states and measurement patterns that power **photonic quantum computers**
 - The correlations that define **Bell tests** and foundational quantum experiments
 - The relational structure of **quantum networks** and protocols
+
+## Causal types with certificates
+
+QRL's current research focus is **types for quantum causal structure that come with certificates**:
+data a checker verifies with linear algebra alone and, for indefinite causal order, a measurement a
+laboratory can run.
+
+- **`Switch(d)`** denotes the quantum switch construct (past party P supplying the control, slots A and
+  B, future party F). Every well-typed `switch(f, g, c)` term denotes a causally nonseparable process,
+  for every target dimension d, and works with any channels f, g. The certificate is a causal witness
+  with 600 lab settings: value −0.1694 on the switch, and at least −2⁻¹⁷ on **every** causally separable
+  process — proved in exact rational arithmetic by `verify_exact_certificate()`.
+- **Refinement types** for two-slot process matrices, following Wechs et al. (PRX Quantum 2021):
+  `QCFO(d) <: QCCC(d) <: QCQC(d) <: PM(2, d)` (fixed, classically controlled, quantum-controlled
+  causal order), `Noncausal(d)` for processes certified outside QC-QC (an OCB causal-inequality
+  violation), and `Switch(d) <: QCQC(d)`. A term gets such a type only with a certificate that checks;
+  subtyping converts certificates.
+
+```bash
+qrl exec  examples/lang/switch.qrl            # -> Process(1x2x2x2, witness=-0.1694 (certified nonseparable))
+qrl check examples/lang/switch_channels.qrl   # a switch over a non-unitary channel: Switch(2)
+qrl check examples/lang/classes.qrl           # definite order, typed QCFO(2) then QCQC(2)
+qrl check examples/lang/noncausal.qrl         # the OCB process: Noncausal(2)
+qrl check examples/lang/pm_loop.qrl           # a causal loop: rejected by T-PM
+```
+
+```python
+from qrl.switch_witness import switch_process, verify_exact_certificate
+from qrl.causal import ocb_process
+from qrl.causal_classes import ocb_certificate, switch_quantum_control_certificate
+
+verify_exact_certificate()["valid"]                       # True: Tr[S W] >= -2^-17 on all separable W
+switch_quantum_control_certificate(2).check(switch_process(2))   # True: the switch is QC-QC
+ocb_certificate().check(ocb_process())                    # True: OCB game value 0.8536 > 3/4
+```
+
+A paper on the causal types is in preparation.
 
 ## Why Relations First?
 
@@ -97,6 +134,7 @@ pip install -e .
 pip install pennylane            # PennyLane backend (Xanadu / simulation)
 pip install perceval-quandela   # Photonic compilation + Quandela Cloud
 pip install graphix              # Graph-state MBQC backend
+pip install cvxpy                # SDP search for QCCC/QCQC certificates (checking needs only NumPy)
 ```
 
 ## CLI
@@ -126,6 +164,7 @@ qrl check examples/lang/switch.qrl  # Type-check a .qrl program
 qrl parse examples/lang/bell.qrl    # Dump its AST
 qrl exec  examples/lang/bell.qrl --shots 1000   # Type-check and run
 qrl exec  examples/lang/switch.qrl              # -> Process(1x2x2x2, witness=-0.1694 (certified nonseparable))
+qrl check examples/lang/classes.qrl             # refinement types: QCQC(2)
 
 # Tools
 qrl info                            # Version, dependencies, source stats
@@ -154,7 +193,7 @@ qrl> quit
 
 ## Implementation Status
 
-**~15,100 lines of code | 968 tests passing | Full photonic pipeline verified**
+**~18,000 lines of code | 1,042 tests passing | Full photonic pipeline verified**
 
 ### Stage 0-3: Core Language & MBQC Compiler (Complete)
 
@@ -295,7 +334,10 @@ rho = QuantumCommonCause(n=2).state()
 | `QuantumMarkovChain` | Quantum Markov chains |
 | `QuantumCommonCause` | Common cause structure (Allen et al. 2017) |
 | `causal_nonseparability_witness()` | OCB-game witness for 2-party qubit processes |
+| `ocb_process()` | The OCB process (violates the OCB causal inequality, P_win = 0.8536) |
 | `switch_witness()` | Measurable causal witness for the quantum switch (Araújo et al. 2015) |
+| `verify_exact_certificate()` | Exact proof that the switch witness is valid on every causally separable process |
+| `qrl.causal_classes` | QC-FO / QC-CC / QC-QC certificates, outside-QC-QC certificate, SDP search |
 
 ---
 
@@ -305,12 +347,12 @@ rho = QuantumCommonCause(n=2).state()
 python -m pytest tests/ -v
 ```
 
-- **968 tests passing** (29 skipped)
+- **1,042 tests passing** (32 skipped; a few need the optional `cvxpy`)
 - **Bell correlations** verified (CHSH violation S = 2.83; hardware S = 2.61 ± 0.08)
 - **Loophole-free Bell test** modelled (Hensen et al. 2015 — η_crit, heralded state, p-value)
 - **GHZ paradox** demonstrated (Mermin inequality M = 4, classical limit 2)
 - **Teleportation fidelity = 1.0**
-- **Causal structure** — process matrices, quantum switch, causal witnesses
+- **Causal structure** — process matrices (validity incl. the no-causal-loop condition), quantum switch, causal witnesses with an exact certificate, refinement classes QC-FO ⊂ QC-CC ⊂ QC-QC
 - **Photonic pipeline** validated locally and on `qpu:belenos`
 
 ---
@@ -391,6 +433,9 @@ qrl/
 │   ├── measurement.py       # Measurement and basis transformations
 │   ├── tensor_utils.py      # n-qubit tensor operations
 │   ├── causal.py            # ProcessMatrix, CPTPMap, QuantumSwitch, QuantumCausalDAG, QuantumMarkovChain, QuantumCommonCause
+│   ├── switch_witness.py    # Switch construct, lab witness, exact certificate
+│   ├── causal_classes.py    # QC-FO / QC-CC / QC-QC / outside-QC-QC certificates
+│   ├── lang/                # Surface language: parser, type checker, interpreter
 │   ├── mbqc/                # MBQC compiler
 │   │   ├── graph_extraction.py
 │   │   ├── pattern_generation.py
@@ -409,8 +454,9 @@ qrl/
 │       ├── bell.py          # CHSH inequality, BellTest, noisy Werner states
 │       ├── ghz.py           # GHZ paradox, Mermin inequality
 │       └── hensen.py        # Loophole-free Bell test (Hensen et al. 2015)
-├── tests/                   # 968 tests
+├── tests/                   # 1,042 tests
 ├── examples/
+│   ├── lang/                # .qrl programs (switch, refinement types, OCB, causal loop)
 │   ├── pennylane/
 │   └── quandela/
 ├── docs/

@@ -53,10 +53,16 @@ class ProcessMatrix:
     Valid process matrices satisfy:
         1. W ≥ 0  (positive semidefinite)
         2. Tr[W] = ∏_k d_{k_O}  (trace normalisation)
-        3. Tr[W * ⊗_k M_k] ∈ [0, 1] for all CPTP instrument elements M_k
+        3. Probabilities sum to 1 for every choice of local CPTP maps, i.e.
+           no causal loops.  Given 1 and 2 this is the linear condition
 
-    Conditions 1 and 2 are checked by is_valid().  Condition 3 requires an
-    SDP and is not yet fully implemented (see is_causally_separable docs).
+               ∏_k (1 − _{k_O} + _{k_I k_O}) W  =  _{all} W,
+
+           with _X W := Tr_X(W) ⊗ 1_X / d_X (Araújo et al. 2015, Sec. II B).
+
+    is_valid() checks all three (see satisfies_no_loop_condition()).
+    Subsystem order is party by party, input then output:
+    1_I, 1_O, 2_I, 2_O, ...
 
     QRL uses this type to represent quantum causal structure as a first-class
     object.  The QRL QuantumRelation is architecturally identical to a quantum
@@ -120,9 +126,51 @@ class ProcessMatrix:
             expected *= d_out
         return bool(np.isclose(np.trace(self.W).real, expected, atol=tol))
 
+    def _subsystem_dims(self) -> List[int]:
+        dims: List[int] = []
+        for d_in, d_out in zip(self.input_dims, self.output_dims):
+            dims += [d_in, d_out]
+        return dims
+
+    @staticmethod
+    def _trace_and_replace(W: np.ndarray, dims: List[int], axes: List[int]) -> np.ndarray:
+        """_X W = Tr_X(W) ⊗ 1_X / d_X for the subsystems in `axes`."""
+        n = len(dims)
+        T = W.reshape(dims + dims)
+        for a in axes:
+            d = dims[a]
+            if d == 1:
+                continue
+            M = np.trace(T, axis1=a, axis2=a + n) / d      # drops axes a and a+n
+            M = np.expand_dims(np.expand_dims(M, a), a + n)
+            T = M * np.eye(d).reshape([d if i in (a, a + n) else 1 for i in range(2 * n)])
+        return T.reshape(W.shape)
+
+    def satisfies_no_loop_condition(self, tol: float = 1e-9) -> bool:
+        """
+        Return True if W gives normalised probabilities for every choice of
+        local CPTP maps (no causal loops):
+
+            ∏_k (1 − _{k_O} + _{k_I k_O}) W  =  _{all} W
+
+        A wire from a party's output back to its own input fails this test,
+        although it is positive and correctly normalised.
+        """
+        dims = self._subsystem_dims()
+        V = self.W.astype(complex)
+        for k in range(len(self.parties)):
+            i, o = 2 * k, 2 * k + 1
+            R_o = self._trace_and_replace(V, dims, [o])
+            V = V - R_o + self._trace_and_replace(R_o, dims, [i])
+        R_all = self._trace_and_replace(self.W.astype(complex), dims, list(range(len(dims))))
+        scale = max(1.0, float(np.abs(self.W).max()))
+        return bool(np.allclose(V, R_all, atol=tol * scale))
+
     def is_valid(self, tol: float = 1e-10) -> bool:
-        """Return True if W satisfies the necessary PSD and trace conditions."""
-        return self.is_positive_semidefinite(tol) and self.is_normalized(tol)
+        """Return True if W is a valid process matrix: W ≥ 0, Tr W = ∏ d_O,
+        and no causal loops (satisfies_no_loop_condition)."""
+        return (self.is_positive_semidefinite(tol) and self.is_normalized(tol)
+                and self.satisfies_no_loop_condition(max(tol, 1e-9)))
 
     def is_causally_separable(self, tol: float = 1e-10) -> bool:
         """
@@ -466,55 +514,51 @@ def from_unitary(
     party_names: Optional[List[str]] = None,
 ) -> ProcessMatrix:
     """
-    Construct a process matrix from a unitary U: H_in → H_out.
+    The two-party process in which a unitary channel U carries A's output to
+    B's input: A prepares a state, U acts on it, B receives the result.
 
-    For a d×d unitary U, the process matrix is:
+    A has no input (d_in = 1, d_out = d); B has no output (d_in = d, d_out = 1).
+    In the convention used throughout qrl.causal (local operations enter as
+    transposed Choi operators),
 
-        W = d * CJ(U)
+        W = |U>><<U|,   |U>> = sum_i |i>_{A_O} (x) U|i>_{B_I},
 
-    where CJ(U) = (I_ref ⊗ U) |Φ+⟩⟨Φ+|_ref (I_ref ⊗ U†) is the
-    Choi-Jamiołkowski operator, and |Φ+⟩ = (1/√d) ∑_i |ii⟩.
+    so that A preparing |psi> and B testing |phi> happens with probability
+    |<phi|U|psi>|^2, and Tr W = d = d_{A_O} d_{B_O}.  The process has definite
+    order A < B, so it is causally separable.
 
-    W has trace d = d_out and represents a single party implementing U.
-    It is always causally separable (single-party processes have trivial
-    causal structure).
+    (The Choi operator of U itself is a party's operation, not a process; it
+    is available as cptp_from_unitary(U).choi().)
 
     Args:
-        U: Square unitary matrix (d × d).
-        party_names: Names for the single party.  Defaults to ['Q'].
+        U: Square unitary matrix (d x d).
+        party_names: Names for the sender and receiver.  Defaults to ['A', 'B'].
 
     Returns:
-        ProcessMatrix corresponding to the unitary channel.
+        ProcessMatrix with parties [sender, receiver], input_dims [1, d],
+        output_dims [d, 1].
 
     Raises:
-        ValueError: If U is not square, or not unitary.
+        ValueError: If U is not square, or not unitary, or party_names does
+            not have two entries.
     """
     if U.ndim != 2 or U.shape[0] != U.shape[1]:
         raise ValueError("U must be a square matrix")
     d = U.shape[0]
     if not np.allclose(U @ U.conj().T, np.eye(d), atol=1e-8):
         raise ValueError("U must be unitary (U U† ≈ I)")
-
-    # |Φ+⟩ = (1/√d) ∑_i |ii⟩ ∈ H_ref ⊗ H_in
-    phi = np.zeros(d * d, dtype=complex)
-    for i in range(d):
-        phi[i * d + i] = 1.0 / np.sqrt(d)
-
-    # Apply I_ref ⊗ U
-    result = np.kron(np.eye(d, dtype=complex), U) @ phi
-
-    # W = d * |result⟩⟨result|
-    W = d * np.outer(result, result.conj())
-
     if party_names is None:
-        party_names = ["Q"]
+        party_names = ["A", "B"]
+    if len(party_names) != 2:
+        raise ValueError("party_names must name the sender and the receiver")
 
+    v = sum(np.kron(np.eye(d)[i], U[:, i]) for i in range(d)).astype(complex)
     return ProcessMatrix(
-        W=W,
-        parties=party_names,
-        input_dims=[d],
-        output_dims=[d],
-        description=f"Process matrix from {d}×{d} unitary",
+        W=np.outer(v, v.conj()),
+        parties=list(party_names),
+        input_dims=[1, d],
+        output_dims=[d, 1],
+        description=f"{party_names[0]} -> U -> {party_names[1]} ({d}x{d} unitary channel)",
     )
 
 

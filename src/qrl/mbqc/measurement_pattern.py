@@ -202,19 +202,17 @@ class MeasurementPattern:
         Compute the process matrix for this MBQC pattern (Morimae 2014).
 
         Builds the graph state |G⟩ from the pattern's preparation and
-        entanglement steps, then returns:
+        entanglement steps.  The graph state is the resource the parties
+        receive: each qubit is a party with input dimension 2 (it gets its
+        qubit of |G⟩) and output dimension 1 (it measures; nothing is sent on).
+        So
 
-            W = 2^n |G⟩⟨G|
+            W = |G⟩⟨G|,   Tr[W] = 1 = ∏_k d_{k_O}.
 
-        where n = len(preparation).  This is the Morimae (2014) resource
-        state for the MBQC computation, scaled so that:
-
-            Tr[W] = 2^n = ∏_k d_{k_O}
-
-        Each qubit is modelled as a party with d_in = 1 (all qubits prepared
-        internally — no external quantum input) and d_out = 2.  Current QRL
-        programs enforce gflow, which places them in the causally separable
-        corner of process matrix theory.
+        (A process whose parties have outputs but no inputs must be the
+        identity on those outputs, so the graph state cannot sit there.)
+        Current QRL programs enforce gflow, which places them in the
+        causally separable corner of process matrix theory.
 
         References:
             Morimae (2014). Acausal measurement-based quantum computing.
@@ -239,18 +237,18 @@ class MeasurementPattern:
         for q1, q2 in self.entanglement:
             state = _apply_two_qubit_gate(state, CZ, q1, q2, n)
 
-        # Morimae: W = 2^n |G⟩⟨G|
-        W = float(2 ** n) * np.outer(state, state.conj())
+        # The parties receive the graph state: W = |G⟩⟨G| on their inputs.
+        W = np.outer(state, state.conj())
 
         # Parties: one per qubit in preparation order.
-        # d_in = 1 (no external input), d_out = 2 (qubit output).
+        # d_in = 2 (receives its qubit), d_out = 1 (measures, sends nothing on).
         parties = [f"Q{q}" for q in self.preparation]
 
         return ProcessMatrix(
             W=W,
             parties=parties,
-            input_dims=[1] * n,
-            output_dims=[2] * n,
+            input_dims=[2] * n,
+            output_dims=[1] * n,
             description=f"MBQC graph state resource (Morimae 2014): {self.description}",
         )
 

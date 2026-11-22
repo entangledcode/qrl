@@ -95,14 +95,53 @@ def test_psd_false_for_non_psd():
 
 
 def test_psd_true_for_rank1_projector():
-    # |ψ⟩ = (1,0,0,0), W = 2 |ψ⟩⟨ψ|
+    # |ψ⟩ = (1,0,0,0), W = 2 |ψ⟩⟨ψ|: positive and normalised, but not a process.
+    # If A outputs |1⟩ the probabilities sum to 0, so it fails the no-loop
+    # condition: a single party's valid processes are ρ_{A_I} ⊗ 1_{A_O}.
     W = np.zeros((4, 4), dtype=complex)
     W[0, 0] = 2.0
     pm = ProcessMatrix(W=W, parties=["A"], input_dims=[2], output_dims=[2])
     assert pm.is_positive_semidefinite()
-    # Tr[W] = 2.0, expected trace = d_out = 2 → normalized
     assert pm.is_normalized()
+    assert not pm.satisfies_no_loop_condition()
+    assert not pm.is_valid()
+
+
+def test_single_party_state_times_identity_is_valid():
+    rho = np.array([[0.7, 0.2], [0.2, 0.3]], dtype=complex)
+    pm = ProcessMatrix(W=np.kron(rho, np.eye(2)), parties=["A"],
+                       input_dims=[2], output_dims=[2])
     assert pm.is_valid()
+
+
+def test_causal_loop_is_not_valid():
+    # A wire from A's output back to A's input (the "grandfather" process):
+    # positive, Tr W = d_{A_O}, but A can make probabilities inconsistent.
+    v = np.array([1, 0, 0, 1], dtype=complex)
+    pm = ProcessMatrix(W=np.outer(v, v.conj()), parties=["A"],
+                       input_dims=[2], output_dims=[2])
+    assert pm.is_positive_semidefinite() and pm.is_normalized()
+    assert not pm.is_valid()
+
+
+def test_two_way_signalling_is_not_valid():
+    # Identity wires A_O -> B_I and B_O -> A_I at once: a causal loop.
+    def wire():
+        return np.array([1, 0, 0, 1], dtype=complex)
+    w = np.einsum("ab,cd->acdb", wire().reshape(2, 2), wire().reshape(2, 2))  # A_I A_O B_I B_O
+    w = w.reshape(16)
+    pm = ProcessMatrix(W=np.outer(w, w.conj()), parties=["A", "B"],
+                       input_dims=[2, 2], output_dims=[2, 2])
+    assert np.isclose(np.trace(pm.W).real, 4.0)
+    assert not pm.is_valid()
+
+
+def test_library_processes_are_valid():
+    from qrl.causal import definite_order_process, quantum_switch_process_matrix
+    from qrl.switch_witness import switch_process
+    for pm in (definite_order_process("AB"), definite_order_process("BA"),
+               quantum_switch_process_matrix(), switch_process(), switch_process(3)):
+        assert pm.is_valid(), pm.description
 
 
 # ------------------------------------------------------------------ #
@@ -194,8 +233,10 @@ def test_from_unitary_identity_gate():
     pm = from_unitary(I2)
     assert pm.is_valid()
     assert pm.W.shape == (4, 4)
+    assert pm.parties == ["A", "B"]
+    assert pm.input_dims == [1, 2] and pm.output_dims == [2, 1]
     assert np.isclose(np.trace(pm.W).real, 2.0)
-    # For U=I: W = 2 |Φ+⟩⟨Φ+|
+    # For U=I: W = |1>><<1| on A_O B_I
     expected = np.array([
         [1, 0, 0, 1],
         [0, 0, 0, 0],
@@ -216,10 +257,24 @@ def test_from_unitary_pauli_x():
     X = np.array([[0, 1], [1, 0]], dtype=complex)
     pm = from_unitary(X)
     assert pm.is_valid()
-    # For X: W = 2 * (I⊗X)|Φ+⟩⟨Φ+|(I⊗X†) = 2 |Φ-⟩⟨Φ-| (sign flip on |11⟩ component)
-    result = np.kron(np.eye(2), X) @ np.array([1, 0, 0, 1]) / np.sqrt(2)
-    expected = 2 * np.outer(result, result.conj())
+    # For X: W = |X>><<X|, |X>> = sum_i |i> (x) X|i>
+    result = np.kron(np.eye(2), X) @ np.array([1, 0, 0, 1])
+    expected = np.outer(result, result.conj())
     assert np.allclose(pm.W, expected)
+
+
+def test_from_unitary_gives_channel_probabilities():
+    # A prepares |psi> (transposed Choi: conj|psi><psi|), B tests |phi>:
+    # probability |<phi|U|psi>|^2.
+    rng = np.random.default_rng(5)
+    z = rng.normal(size=(2, 2)) + 1j * rng.normal(size=(2, 2))
+    U, _ = np.linalg.qr(z)
+    pm = from_unitary(U)
+    for _ in range(5):
+        psi = rng.normal(size=2) + 1j * rng.normal(size=2); psi /= np.linalg.norm(psi)
+        phi = rng.normal(size=2) + 1j * rng.normal(size=2); phi /= np.linalg.norm(phi)
+        M = np.kron(np.outer(psi, psi.conj()).conj(), np.outer(phi, phi.conj()))
+        assert np.isclose(np.trace(M @ pm.W).real, abs(phi.conj() @ U @ psi) ** 2)
 
 
 def test_from_unitary_two_qubit():
@@ -229,7 +284,7 @@ def test_from_unitary_two_qubit():
         [0, 0, 0, 1],
         [0, 0, 1, 0],
     ], dtype=complex)
-    pm = from_unitary(CNOT, party_names=["AB"])
+    pm = from_unitary(CNOT)
     assert pm.is_valid()
     assert pm.W.shape == (16, 16)
     assert np.isclose(np.trace(pm.W).real, 4.0)
@@ -237,8 +292,10 @@ def test_from_unitary_two_qubit():
 
 def test_from_unitary_custom_party_name():
     I2 = np.eye(2, dtype=complex)
-    pm = from_unitary(I2, party_names=["Alice"])
-    assert pm.parties == ["Alice"]
+    pm = from_unitary(I2, party_names=["Alice", "Bob"])
+    assert pm.parties == ["Alice", "Bob"]
+    with pytest.raises(ValueError, match="sender"):
+        from_unitary(I2, party_names=["Alice"])
 
 
 def test_from_unitary_non_square_raises():
@@ -281,23 +338,23 @@ def test_pattern_pm_2qubit_shape():
 
 def test_pattern_pm_2qubit_trace():
     pm = _cluster_pattern(2).process_matrix()
-    assert np.isclose(np.trace(pm.W).real, 4.0)
+    assert np.isclose(np.trace(pm.W).real, 1.0)   # = prod of output dims (all 1)
 
 
 def test_pattern_pm_2qubit_rank_one():
-    """W = 2^n |G⟩⟨G| is rank-1 (one nonzero eigenvalue)."""
+    """W = |G⟩⟨G| is rank-1 (one nonzero eigenvalue, equal to 1)."""
     pm = _cluster_pattern(2).process_matrix()
     eigs = pm.eigenvalues()
     nonzero = eigs[eigs > 1e-10]
     assert len(nonzero) == 1
-    assert np.isclose(nonzero[0], 4.0)   # 2^n = 4
+    assert np.isclose(nonzero[0], 1.0)
 
 
 def test_pattern_pm_3qubit_cluster():
     pm = _cluster_pattern(3).process_matrix()
     assert pm.is_valid()
     assert pm.W.shape == (8, 8)
-    assert np.isclose(np.trace(pm.W).real, 8.0)
+    assert np.isclose(np.trace(pm.W).real, 1.0)
 
 
 def test_pattern_pm_parties_match_preparation():
@@ -306,15 +363,16 @@ def test_pattern_pm_parties_match_preparation():
     assert pm.parties == ["Q0", "Q1"]
 
 
-def test_pattern_pm_input_dims_are_one():
-    """All input dims = 1 (state preparation — no external input)."""
+def test_pattern_pm_input_dims_are_two():
+    """Each party receives its qubit of the graph state."""
     pm = _cluster_pattern(2).process_matrix()
-    assert all(d == 1 for d in pm.input_dims)
+    assert all(d == 2 for d in pm.input_dims)
 
 
-def test_pattern_pm_output_dims_are_two():
+def test_pattern_pm_output_dims_are_one():
+    """Each party measures; nothing is sent on."""
     pm = _cluster_pattern(2).process_matrix()
-    assert all(d == 2 for d in pm.output_dims)
+    assert all(d == 1 for d in pm.output_dims)
 
 
 def test_pattern_pm_2qubit_graph_state_values():
@@ -322,7 +380,7 @@ def test_pattern_pm_2qubit_graph_state_values():
     pm = _cluster_pattern(2).process_matrix()
     # Expected graph state for 2-qubit cluster:
     g = np.array([1, 1, 1, -1], dtype=complex) / 2.0
-    expected_W = 4.0 * np.outer(g, g.conj())
+    expected_W = np.outer(g, g.conj())
     assert np.allclose(pm.W, expected_W)
 
 
@@ -341,7 +399,7 @@ def test_pattern_pm_with_measurements():
 
 
 def test_pattern_pm_no_entanglement():
-    """Single qubit, no entanglement: W = 2 |+⟩⟨+|."""
+    """Single qubit, no entanglement: W = |+⟩⟨+|."""
     pattern = MeasurementPattern(
         preparation=[0],
         entanglement=[],
@@ -352,7 +410,7 @@ def test_pattern_pm_no_entanglement():
     pm = pattern.process_matrix()
     assert pm.is_valid()
     plus = np.array([1.0, 1.0]) / np.sqrt(2)
-    expected_W = 2.0 * np.outer(plus, plus.conj())
+    expected_W = np.outer(plus, plus.conj())
     assert np.allclose(pm.W, expected_W)
 
 
@@ -410,9 +468,9 @@ def test_eigenvalues_non_negative_for_valid_pm():
 def test_eigenvalues_rank1():
     pm = _cluster_pattern(2).process_matrix()
     eigs = pm.eigenvalues()
-    # One eigenvalue = 4, rest ≈ 0
+    # W = |G><G|: one eigenvalue = 1, rest ≈ 0
     sorted_eigs = np.sort(np.abs(eigs))[::-1]
-    assert np.isclose(sorted_eigs[0], 4.0, atol=1e-8)
+    assert np.isclose(sorted_eigs[0], 1.0, atol=1e-8)
     assert np.all(sorted_eigs[1:] < 1e-8)
 
 

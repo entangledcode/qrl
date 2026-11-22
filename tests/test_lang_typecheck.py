@@ -229,3 +229,57 @@ def test_error_message_has_source_caret():
         check_source("switch(|0>, |0>, |+>)")
     except QRLTypeError as e:
         assert "^" in str(e)
+
+
+# ------------------------------------------------------------------ #
+# Refinement types QCFO <: QCCC <: QCQC <: PM(2, d), Noncausal (T-Refine)
+# ------------------------------------------------------------------ #
+
+def _pm_lit(W):
+    rows = ["[" + ", ".join(f"{x.real:.17g}" for x in row) + "]" for row in W]
+    return "pm([" + ", ".join(rows) + "], [1])"
+
+
+def _fo_lit():
+    from qrl.causal import definite_order_process
+    return _pm_lit(definite_order_process("AB").W)
+
+
+def _ocb_lit():
+    from qrl.causal import ocb_process
+    return _pm_lit(ocb_process().W)
+
+
+def test_t_refine_fixed_order():
+    assert ty(f"let W : QCFO(2) = {_fo_lit()} in W") == T.CausalClass("QCFO", 2)
+
+
+def test_t_refine_converts_up_the_chain_without_a_solver():
+    assert ty(f"let W : QCCC(2) = {_fo_lit()} in W") == T.CausalClass("QCCC", 2)
+    assert ty(f"let W : QCQC(2) = {_fo_lit()} in W") == T.CausalClass("QCQC", 2)
+
+
+def test_refinement_subsumption():
+    src = f"let W : QCFO(2) = {_fo_lit()} in let V : QCQC(2) = W in let U : PM(2, 2) = V in U"
+    assert ty(src) == T.PM(2, 2)
+    with pytest.raises(QRLTypeError):          # no downcast
+        ty(f"let W : QCQC(2) = {_fo_lit()} in let V : QCFO(2) = W in V")
+
+
+def test_switch_is_quantum_control():
+    src = "let X = cptp([[0, 1], [1, 0]]) in let S : QCQC(2) = switch(X, X, |+>) in S"
+    assert ty(src) == T.CausalClass("QCQC", 2)
+    with pytest.raises(QRLTypeError):          # the switch is not QC-CC
+        ty("let X = cptp([[0, 1], [1, 0]]) in let S : QCCC(2) = switch(X, X, |+>) in S")
+
+
+def test_ocb_process_is_noncausal_and_nothing_else():
+    assert ty(f"let O : Noncausal(2) = {_ocb_lit()} in O") == T.CausalClass("Noncausal", 2)
+    for k in ("QCFO", "QCCC", "QCQC"):
+        with pytest.raises(QRLTypeError):
+            ty(f"let O : {k}(2) = {_ocb_lit()} in O")
+
+
+def test_noncausal_rejects_a_causal_process():
+    with pytest.raises(QRLTypeError, match="causal bound"):
+        ty(f"let W : Noncausal(2) = {_fo_lit()} in W")

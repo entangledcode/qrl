@@ -60,6 +60,14 @@ class TyCausalDAG(TypeExpr):
 
 
 @dataclass
+class TyClass(TypeExpr):
+    """QCFO(d) | QCCC(d) | QCQC(d) | Noncausal(d): refinement classes of
+    two-slot process matrices (qrl.causal_classes)."""
+    kind: str = ""
+    d: int = 0
+
+
+@dataclass
 class TyTensor(TypeExpr):
     left: TypeExpr = None
     right: TypeExpr = None

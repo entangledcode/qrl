@@ -21,7 +21,8 @@ from .tokens import Token, TokenKind as K
 
 _BUILTINS = {"entangle", "ask", "cptp", "switch", "pm", "dag", "do"}
 _TYPE_NAMES = {"Qubit", "Ques", "Outcome"}
-_TYPE_CTORS = {"Rel", "Switch", "UniProc", "Proc", "PM", "CausalDAG"}
+_TYPE_CTORS = {"Rel", "Switch", "UniProc", "Proc", "PM", "CausalDAG",
+               "QCFO", "QCCC", "QCQC", "Noncausal"}
 
 
 def parse(src: str) -> ast.Term:
@@ -304,6 +305,8 @@ class _Parser:
             return ast.TyUniProc(t.line, t.col, nums[0])
         if name == "CausalDAG":
             return ast.TyCausalDAG(t.line, t.col, nums[0])
+        if name in ("QCFO", "QCCC", "QCQC", "Noncausal"):
+            return ast.TyClass(t.line, t.col, name, nums[0])
         if name == "Proc":
             if len(nums) != 2:
                 raise QRLSyntaxError("Proc takes 2 args", t.line, t.col, self.src)

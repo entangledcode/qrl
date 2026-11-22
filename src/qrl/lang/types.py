@@ -92,17 +92,46 @@ class CausalDAG(Type):
         return f"CausalDAG({self.n})"
 
 
+@dataclass(frozen=True)
+class CausalClass(Type):
+    """A refinement of two-slot process matrices (slots of dimension d):
+
+        QCFO(d) <= QCCC(d) <= QCQC(d) <= PM(2, d)    (Wechs et al. 2021)
+        Noncausal(d) <= PM(2, d)                     (outside QC-QC)
+
+    A value gets one of these types only with a certificate that checks
+    (qrl.causal_classes)."""
+    kind: str          # "QCFO" | "QCCC" | "QCQC" | "Noncausal"
+    d: int
+
+    def __str__(self) -> str:
+        return f"{self.kind}({self.d})"
+
+
+_CHAIN = ("QCFO", "QCCC", "QCQC")
+
+
 def is_subtype(sub: Type, sup: Type) -> bool:
-    """Subtyping.  The only non-reflexive rule in the paper is
+    """Subtyping:
 
-        UniProc(d)  <=  Proc(d, d)
+        UniProc(d)  <=  Proc(d, d)                 (a unitary channel is a channel)
+        QCFO(d) <= QCCC(d) <= QCQC(d) <= PM(2, d)  (certificates convert upward)
+        Noncausal(d)  <=  PM(2, d)
+        Switch(d)  <=  QCQC(d)                     (closed-form certificate)
 
-    (a unitary channel is a channel).  Tensor is covariant.
+    Tensor is covariant.
     """
     if sub == sup:
         return True
     if isinstance(sub, UniProc) and isinstance(sup, Proc):
         return sup.d_in == sub.d and sup.d_out == sub.d
+    if isinstance(sub, CausalClass) and isinstance(sup, PM):
+        return sup.n == 2 and sup.d == sub.d
+    if isinstance(sub, CausalClass) and isinstance(sup, CausalClass):
+        return (sub.d == sup.d and sub.kind in _CHAIN and sup.kind in _CHAIN
+                and _CHAIN.index(sub.kind) <= _CHAIN.index(sup.kind))
+    if isinstance(sub, Switch) and isinstance(sup, CausalClass):
+        return sup.kind == "QCQC" and sup.d == sub.d
     if isinstance(sub, Tensor) and isinstance(sup, Tensor):
         return is_subtype(sub.left, sup.left) and is_subtype(sub.right, sup.right)
     return False

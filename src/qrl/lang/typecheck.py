@@ -5,7 +5,7 @@ Implements the thirteen typing rules of
 
     basic       T-Var  T-Qubit  T-Let
     relational  T-Entangle-2  T-Entangle-N  T-Ask  T-Tensor
-    causal      T-UniProc  T-Switch  T-Seq  T-PM  T-DAG  T-Do
+    causal      T-UniProc  T-Switch  T-Seq  T-PM  T-DAG  T-Do  T-Refine
 
 The numeric side-conditions (U†U = I for T-UniProc; for T-PM, W Hermitian,
 W >= 0, Tr[W] = d**n and the no-causal-loop condition L_V(W) = W of Araujo et
@@ -133,6 +133,10 @@ class _Rules:
         vty = _check(t.value, env)
         if t.annot is not None:
             want = _resolve_type(t.annot)
+            if (not T.is_subtype(vty, want) and isinstance(want, T.CausalClass)
+                    and isinstance(t.value, ast.PM) and vty == T.PM(2, want.d)):
+                _refine(t.value, want)                        # T-Refine (raises if no certificate)
+                vty = want
             if not T.is_subtype(vty, want):
                 raise QRLTypeError(
                     f"annotation mismatch: {t.name!r} declared {want}, "
@@ -336,6 +340,48 @@ def _as_proc(ty: T.Type, node: ast.Term) -> T.Proc:
     raise QRLTypeError(f"expected a process, got {ty}", node.line, node.col)
 
 
+def _refine(t: "ast.PM", want: "T.CausalClass") -> object:
+    """T-Refine: find a certificate that the pm literal t is in class `want`
+    and check it; return the certificate or raise QRLTypeError."""
+    from qrl.causal import ProcessMatrix
+    from qrl import causal_classes as cc
+    w = _matrix(t.w, "pm").astype(complex)
+    pm = ProcessMatrix(W=w, parties=["A", "B"], input_dims=[want.d] * 2,
+                       output_dims=[want.d] * 2)
+    where = (t.w.line, t.w.col)
+    if want.kind == "Noncausal":
+        if want.d != 2:
+            raise QRLTypeError("Noncausal(d) is certified for qubit slots only (d = 2)", *where)
+        cert = cc.ocb_certificate()
+        if cert.check(pm):
+            return cert
+        raise QRLTypeError(
+            f"pm: no certificate for Noncausal({want.d}): the OCB game value "
+            f"{cert.value(pm):.4f} does not exceed the causal bound 3/4", *where)
+    fo = cc.fixed_order_certificate(pm)
+    if want.kind == "QCFO":
+        if fo is None:
+            raise QRLTypeError("pm: not a fixed-order process (no order satisfies "
+                               "the comb conditions), so it has no type QCFO", *where)
+        return fo
+    if fo is not None:                               # convert up the chain, no solver
+        c = fo.to_classical_control(pm)
+        return c if want.kind == "QCCC" else c.to_quantum_control(pm)
+    if want.d == 2 and cc.ocb_certificate().check(pm):  # proved outside QC-QC (so outside QC-CC)
+        raise QRLTypeError(
+            f"pm: certified outside QC-QC (OCB game value "
+            f"{cc.ocb_certificate().value(pm):.4f} > 3/4), so it has no type {want}", *where)
+    cls = cc.CLASSICAL_CONTROL if want.kind == "QCCC" else cc.QUANTUM_CONTROL
+    try:
+        cert = cc.find_certificate(pm, cls)
+    except ImportError:
+        raise QRLTypeError(f"pm: certifying {want} needs an SDP solver "
+                           f"(pip install cvxpy)", *where) from None
+    if cert is None:
+        raise QRLTypeError(f"pm: no certificate found for {want}", *where)
+    return cert
+
+
 def _chan_dim(ty: "T.Type") -> int:
     """Dimension d of a channel type UniProc(d) or Proc(d, d)."""
     return ty.d if isinstance(ty, T.UniProc) else ty.d_in
@@ -388,6 +434,8 @@ def _resolve_type(te: ast.TypeExpr) -> T.Type:
         return T.PM(te.n, te.d)
     if isinstance(te, ast.TyCausalDAG):
         return T.CausalDAG(te.n)
+    if isinstance(te, ast.TyClass):
+        return T.CausalClass(te.kind, te.d)
     if isinstance(te, ast.TyTensor):
         return T.Tensor(_resolve_type(te.left), _resolve_type(te.right))
     raise QRLTypeError("unrecognised type annotation", te.line, te.col)  # pragma: no cover

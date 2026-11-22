@@ -76,11 +76,22 @@ comment    ::= "--" ... end-of-line
 | T-Switch     | `switch(f, g, c)`, `f,g : Proc(d, d)`, `c : Qubit` | `Switch(d)` |
 | T-Seq        | `t1 ; t2`                    | `Proc(d1, d3)` |
 | T-PM         | `pm(W, p)`, `W ≥ 0`, `Tr[W] = dⁿ`, `L_V(W) = W` | `PM(n, d)` |
+| T-Refine     | `let x : C(d) = pm(W, p)`, a certificate for W ∈ C checks | `C(d)`, C ∈ {QCFO, QCCC, QCQC, Noncausal} |
 | T-DAG        | `dag(V, E, Φ)`, `(V,E)` acyclic | `CausalDAG(\|V\|)` |
 | T-Do         | `do(g, x, ρ)`, `x ∈ V(g)`    | `Outcome` |
 
-Subtyping: `UniProc(d) <: Proc(d, d)` (a unitary channel is a channel); tensor is
-covariant. Nothing coerces *into* `Switch(d)` — that is what makes Theorem 1
+Subtyping: `UniProc(d) <: Proc(d, d)` (a unitary channel is a channel);
+`QCFO(d) <: QCCC(d) <: QCQC(d) <: PM(2, d)` and `Noncausal(d) <: PM(2, d)`
+(refinement classes of two-slot processes, Wechs et al. 2021; certificates
+convert upward); `Switch(d) <: QCQC(d)` (closed-form certificate); tensor is
+covariant.
+
+T-Refine finds and checks a certificate (`qrl.causal_classes`). QCFO is decided
+directly; a fixed-order certificate converts up to QCCC and QCQC without a
+solver; otherwise QCCC and QCQC need an SDP solver (cvxpy). Noncausal (d = 2)
+is certified by a violation of the OCB causal inequality, which also refutes
+QCCC and QCQC without a solver. Examples: `examples/lang/classes.qrl`,
+`examples/lang/noncausal.qrl`. Nothing coerces *into* `Switch(d)` — that is what makes Theorem 1
 (Switch Soundness) enforceable at the type level.
 
 ### Why `cptp` splits into two rules

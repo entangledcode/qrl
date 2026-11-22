@@ -29,6 +29,11 @@ control in the |+>/|-> basis.  Its weights were computed by SDP and verified
     witness value on any causally separable process  >= 0
     optimal witness without lab restrictions         = -7/9 (worst-case noise)
 
+The separable bound holds for every causally separable process, including
+those where P's output classically chooses the order of A and B.
+verify_exact_certificate() proves Tr[S W] >= -2^-17 (~ -7.6e-6) for all of
+them in exact rational arithmetic, with no floating point in the check.
+
 The certificate is device-dependent: it assumes A and B really apply the stated
 unitaries, P really prepares the stated states and F really measures in the
 stated basis.
@@ -43,9 +48,11 @@ References:
 
 from __future__ import annotations
 
+import itertools
+import math
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Dict, Mapping, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -226,6 +233,163 @@ class SwitchWitness:
         return (f"SwitchWitness({len(self.settings)} settings, "
                 f"predicted={self.predicted_value:+.4f}, "
                 f"separable bound={self.separable_bound:g})")
+
+
+# ------------------------------------------------------------------ #
+# Exact certificate                                                    #
+# ------------------------------------------------------------------ #
+#
+# Claim checked here, in exact rational arithmetic:
+#
+#     Tr[S W] >= 8 * TAU   for every causally separable process W
+#
+# where S is the shipped witness (its float weights taken as exact binary
+# rationals).  Causally separable = classically controlled order (QC-CC):
+# W = W_0 + W_1, W_k >= 0, W_0 obeying the comb conditions of P<A<B<F and W_1
+# those of P<B<A<F, the P-level condition imposed on the sum only (Wechs,
+# Abbott, Branciard 2026; Wei, Pang 2026).  Certificate: operators Q_0, Q_1, Y
+# on the Pauli strings those conditions forbid, with
+#
+#     M_k = S - Q_k - Y - TAU * 1  positive definite  (k = 0, 1).
+#
+# Then Tr[S W] = sum_k Tr[(M_k + Q_k + Y + TAU) W_k] >= 8 * TAU, since
+# Tr[Q_k W_k] = 0, Tr[Y (W_0 + W_1)] = 0 and Tr W = 8.
+
+_PAULI = (
+    np.eye(2, dtype=complex),
+    np.array([[0, 1], [1, 0]], dtype=complex),
+    np.array([[0, -1j], [1j, 0]], dtype=complex),
+    np.array([[1, 0], [0, -1]], dtype=complex),
+)
+
+
+def _gaussian_integer_scaled(M: np.ndarray) -> Tuple[np.ndarray, int]:
+    """Return (G, s2) with M = G / sqrt(s2), G a Gaussian-integer matrix, s2 in {1, 2}."""
+    for s2 in (1, 2):
+        G = M * np.sqrt(s2)
+        if np.allclose(G, np.round(G.real) + 1j * np.round(G.imag), atol=1e-12):
+            return np.round(G.real) + 1j * np.round(G.imag), s2
+    raise ValueError("entries are not Gaussian integers over 1 or sqrt(2)")
+
+
+def _exact_pauli_coeffs(op_int: np.ndarray, denom: int, n: int) -> Dict[Tuple[int, ...], "Fraction"]:
+    """Pauli coefficients Tr[P op]/2^n of op = op_int / denom, op_int a
+    Gaussian-integer Hermitian matrix on n qubits; exact Fractions."""
+    from fractions import Fraction
+    out = {}
+    for idx in itertools.product(range(4), repeat=n):
+        P = _PAULI[idx[0]]
+        for j in idx[1:]:
+            P = np.kron(P, _PAULI[j])
+        t = np.trace(P @ op_int)
+        assert abs(t.imag) < 1e-9 and abs(t.real - round(t.real)) < 1e-9
+        v = int(round(t.real))
+        if v:
+            out[idx] = Fraction(v, denom * 2 ** n)
+    return out
+
+
+def _exact_witness_coeffs() -> Dict[Tuple[int, ...], "Fraction"]:
+    """Exact Pauli coefficients of the shipped witness S on P_O A_I A_O B_I B_O F."""
+    from fractions import Fraction
+
+    def state_coeffs(ket, conj):
+        v, s2 = _gaussian_integer_scaled(ket)
+        rho = np.outer(v, v.conj())
+        return _exact_pauli_coeffs(rho.conj() if conj else rho, s2, 1)
+
+    def choi_coeffs(U):
+        W, s2 = _gaussian_integer_scaled(U)
+        v = sum(np.kron(np.eye(2)[i], W[:, i]) for i in range(2))
+        return _exact_pauli_coeffs(np.outer(v, v.conj()).conj(), s2, 2)
+
+    prep = {k: state_coeffs(QUBIT_STATES[k], True) for k in QUBIT_STATES}
+    eff = {k: state_coeffs(QUBIT_STATES[k], False) for k in QUBIT_STATES}
+    chois = {k: choi_coeffs(U) for k, U in WITNESS_UNITARIES.items()}
+
+    # group terms by (P preparation, F outcome): S = sum prep (x) [sum_ab w A (x) B] (x) eff
+    groups: Dict[Tuple[str, str], Dict[Tuple[int, ...], Fraction]] = {}
+    for p, a, b, s, w in TERMS:
+        g = groups.setdefault((p, s), {})
+        wf = Fraction(w)
+        for ia, ca in chois[a].items():
+            for ib, cb in chois[b].items():
+                key = ia + ib
+                g[key] = g.get(key, 0) + wf * ca * cb
+    S: Dict[Tuple[int, ...], Fraction] = {}
+    for (p, s), mid in groups.items():
+        for ip, cp in prep[p].items():
+            for is_, cs in eff[s].items():
+                for im, cm in mid.items():
+                    key = ip + im + is_
+                    S[key] = S.get(key, 0) + cp * cm * cs
+    return {k: v for k, v in S.items() if v}
+
+
+def _bareiss_positive_definite(A: List[List[int]]) -> bool:
+    """Exact test that a symmetric integer matrix is positive definite:
+    all leading principal minors > 0 (Sylvester), by fraction-free elimination."""
+    M = [row[:] for row in A]
+    n = len(M)
+    prev = 1
+    for k in range(n):
+        if M[k][k] <= 0:            # M[k][k] is the (k+1)-th leading principal minor
+            return False
+        for i in range(k + 1, n):
+            for j in range(k + 1, n):
+                M[i][j] = (M[i][j] * M[k][k] - M[i][k] * M[k][j]) // prev
+        prev = M[k][k]
+    return True
+
+
+def verify_exact_certificate() -> Dict[str, object]:
+    """
+    Check, in exact rational arithmetic, that the shipped witness satisfies
+
+        Tr[S W] >= 8 * TAU   for every causally separable process W,
+
+    with the certificate in qrl._switch_witness_cert (TAU ~ -1e-6).  No
+    floating point enters the check: S is rebuilt from the shipped weights as
+    exact rationals, and positivity of M_0, M_1 is decided by integer
+    elimination.  Takes a few seconds.
+
+    Returns:
+        dict with 'valid' (bool), 'separable_bound' (Fraction, = 8 TAU) and
+        'branches' (positive-definiteness of M_0 and M_1).
+    """
+    from fractions import Fraction
+    from qrl._switch_witness_cert import TAU_NUM, TAU_DEN, Q0, Q1, Y
+
+    S = _exact_witness_coeffs()
+    if any(sum(1 for j in k if j == 2) % 2 for k in S):
+        raise ValueError("witness has imaginary Pauli components; the certificate assumes S real")
+    tau = Fraction(TAU_NUM, TAU_DEN)
+    as_dict = lambda rows: {tuple(int(c) for c in k): Fraction(n, d) for k, n, d in rows}
+    Yd = as_dict(Y)
+    results = []
+    for Q in (as_dict(Q0), as_dict(Q1)):
+        coeffs = dict(S)
+        for k, v in list(Q.items()) + list(Yd.items()):
+            coeffs[k] = coeffs.get(k, 0) - v
+        coeffs[(0,) * 6] = coeffs.get((0,) * 6, 0) - tau
+        den = 1
+        for v in coeffs.values():
+            if v:
+                den = math.lcm(den, v.denominator)
+        M = [[0] * 64 for _ in range(64)]
+        for k, v in coeffs.items():
+            if not v:
+                continue
+            P = _PAULI[k[0]]
+            for j in k[1:]:
+                P = np.kron(P, _PAULI[j])
+            P = np.round(P.real).astype(int)          # real Pauli strings: entries 0, +-1
+            vi = int(v * den)
+            rows, cols = np.nonzero(P)
+            for r, c in zip(rows, cols):
+                M[r][c] += vi * int(P[r, c])
+        results.append(_bareiss_positive_definite(M))
+    return {"valid": all(results), "separable_bound": 8 * tau, "branches": results}
 
 
 @lru_cache(maxsize=1)

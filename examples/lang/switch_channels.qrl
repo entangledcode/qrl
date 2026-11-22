@@ -1,0 +1,15 @@
+-- The switch over a non-unitary channel is still the switch.
+--
+-- K is an amplitude-damping-style channel (two Kraus operators), so it types
+-- as Proc(2, 2), not UniProc(2).  T-Switch accepts any channels: Switch(d)
+-- denotes the switch construct, which does not depend on what is plugged into
+-- it, so the certificate is the same as for unitaries.  (Running the switch
+-- with K uses its Kraus form; coherence between the two orders survives, as
+-- Ebler, Salek and Chiribella showed even for completely depolarising channels.)
+--
+--   qrl check examples/lang/switch_channels.qrl   ->   ok  : Switch(2)
+--   qrl exec  examples/lang/switch_channels.qrl   ->   witness=-0.1694 (certified nonseparable)
+
+let K = cptp([[1, 0], [0, 0.70710678]], [[0, 0.70710678], [0, 0]]) in
+let Z : UniProc(2) = cptp([[1, 0], [0, -1]]) in
+switch(K, Z, |+>)

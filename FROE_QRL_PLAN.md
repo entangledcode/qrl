@@ -66,15 +66,16 @@ typed language that compiles down to the Python library:
 
 CLI: `qrl check\|parse\|exec FILE.qrl` (`qrl exec --shots N --seed S
 --dist`). Example programs in `examples/lang/`: `bell.qrl`, `switch.qrl`,
-`causal_dag.qrl`, `switch_rejected.qrl` — read these first, they're the
+`causal_dag.qrl`, `switch_channels.qrl`, `pm_loop.qrl` — read these first, they're the
 clearest "how do I write QRL" reference.
 
 **Known constraints Froe should respect, not "fix":**
 - Density matrices throughout (no statevector path) — deliberate, one code
   path.
 - `DAG`/`Do` only support single-parent nodes; multi-parent raises a
-  runtime error by design (E-Switch-Incoherent is deliberately unreachable
-  from well-typed surface programs).
+  runtime error by design.
+- `switch(f, g, c)` takes any channels: `Switch(d)` is the switch construct,
+  which does not depend on them (do not reintroduce a unitary-only rule).
 - `qrl.physics` vs `qrl.domains` asymmetry is intentional — physics is the
   foundational layer domains build on.
 

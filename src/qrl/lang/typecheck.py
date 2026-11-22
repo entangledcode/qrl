@@ -7,12 +7,11 @@ Implements the thirteen typing rules of
     relational  T-Entangle-2  T-Entangle-N  T-Ask  T-Tensor
     causal      T-UniProc  T-Switch  T-Seq  T-PM  T-DAG  T-Do
 
-The numeric side-conditions (U†U = I for T-UniProc, W >= 0 for T-PM,
-acyclicity for T-DAG) are checked with numpy at tolerance 1e-9.  The full
-Araujo structural-projector validity of a process matrix (Tr_out W = I_in as an
-operator identity) is delegated to `qrl.causal.ProcessMatrix` at run time; the
-checker verifies Hermiticity, positive-semidefiniteness and the process-matrix
-trace normalisation Tr[W] = d**n.
+The numeric side-conditions (U†U = I for T-UniProc; for T-PM, W Hermitian,
+W >= 0, Tr[W] = d**n and the no-causal-loop condition L_V(W) = W of Araujo et
+al. 2015; acyclicity for T-DAG) are checked with numpy.  T-Switch accepts any
+channels of type Proc(d, d): Switch(d) denotes the switch construct, which does
+not depend on them.
 """
 
 from __future__ import annotations
@@ -202,31 +201,27 @@ class _Rules:
     def Switch(t: ast.Switch, env: Env) -> T.Type:           # T-Switch
         fty = _check(t.f, env)
         gty = _check(t.g, env)
+        # T-Switch takes any channels Proc(d, d) (UniProc(d) <: Proc(d, d)).
+        # Switch(d) denotes the construct, which does not depend on them.
         for label, ty, node in (("first", fty, t.f), ("second", gty, t.g)):
             if isinstance(ty, T.UniProc):
                 continue
-            if isinstance(ty, T.Proc):
-                raise QRLTypeError(
-                    f"switch: {label} channel has type {ty}, but T-Switch "
-                    f"requires UniProc(d) — a switch over a non-unitary channel "
-                    f"reduces to an incoherent mixture of causal orders "
-                    f"(causally separable) and cannot inhabit Switch(d)",
-                    node.line, node.col,
-                )
+            if isinstance(ty, T.Proc) and ty.d_in == ty.d_out:
+                continue
             raise QRLTypeError(
-                f"switch: {label} channel has type {ty}, expected UniProc(d)",
+                f"switch: {label} channel has type {ty}, expected Proc(d, d)",
                 node.line, node.col,
             )
-        if fty.d != gty.d:
+        if _chan_dim(fty) != _chan_dim(gty):
             raise QRLTypeError(
-                f"switch: channel dimensions differ ({fty.d} vs {gty.d})",
+                f"switch: channel dimensions differ ({_chan_dim(fty)} vs {_chan_dim(gty)})",
                 t.line, t.col,
             )
         cty = _check(t.control, env)
         if not isinstance(cty, T.Qubit):
             raise QRLTypeError(f"switch: control has type {cty}, expected Qubit",
                                t.control.line, t.control.col)
-        return T.Switch(fty.d)
+        return T.Switch(_chan_dim(fty))
 
     @staticmethod
     def Seq(t: ast.Seq, env: Env) -> T.Type:                 # T-Seq
@@ -260,6 +255,16 @@ class _Rules:
             raise QRLTypeError(
                 f"pm: Tr[W] = {np.trace(w).real:.4f}, expected d**n = {d ** n} "
                 f"for a valid {n}-party process matrix",
+                t.w.line, t.w.col,
+            )
+        from qrl.causal import ProcessMatrix
+        pm = ProcessMatrix(W=w.astype(complex), parties=[f"P{i}" for i in range(n)],
+                           input_dims=[d] * n, output_dims=[d] * n)
+        if not pm.satisfies_no_loop_condition(1e-6):
+            raise QRLTypeError(
+                "pm: W is not a valid process matrix: it fails the no-causal-loop "
+                "condition L_V(W) = W (some local operations would give "
+                "probabilities that do not sum to 1)",
                 t.w.line, t.w.col,
             )
         return T.PM(n, d)
@@ -329,6 +334,11 @@ def _as_proc(ty: T.Type, node: ast.Term) -> T.Proc:
     if isinstance(ty, T.UniProc):
         return T.Proc(ty.d, ty.d)          # UniProc(d) <: Proc(d, d)
     raise QRLTypeError(f"expected a process, got {ty}", node.line, node.col)
+
+
+def _chan_dim(ty: "T.Type") -> int:
+    """Dimension d of a channel type UniProc(d) or Proc(d, d)."""
+    return ty.d if isinstance(ty, T.UniProc) else ty.d_in
 
 
 def _pm_shape(dim: int) -> Tuple[Optional[int], Optional[int]]:

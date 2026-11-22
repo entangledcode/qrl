@@ -13,14 +13,14 @@ Sessions A and B cover the basic, relational, and unitary-causal strata:
     T-Tensor                       t1 * t2 on states (Kronecker product)
     T-UniProc / cptp               unitary and general CPTP channels
     T-Seq                          t1 ; t2  sequential channel composition
-    E-Switch-Coherent              switch(f, g, c) -> quantum-switch process
+    E-Switch                       switch(f, g, c) -> the switch construct (any channels)
     T-PM / pm                      process matrix from a raw W
     T-DAG / dag                    quantum causal DAG (single-parent nodes)
     T-Do / do                      do-intervention, sampled outcome on the sink
 
-E-Switch-Incoherent is intentionally not implemented: no well-typed surface
-program can reach it (switch requires UniProc channels; a switch over a general
-CPTP map has type PM(2,d), not Switch(d)).
+switch(f, g, c) accepts any channels: Switch(d) denotes the switch construct,
+which does not depend on them.  Running it with general CPTP channels uses the
+Kraus form of the switch (QuantumSwitch.apply).
 
 Public entry points (re-exported from `qrl.lang`):
 
@@ -378,12 +378,6 @@ class Interp:
         if not isinstance(control, QState) or control.n != 1:
             raise QRLRuntimeError("switch: control must be a single qubit",
                                   t.control.line, t.control.col)
-        if not (f.is_unitary and g.is_unitary):
-            # T-Switch should have prevented this; belt and braces
-            raise QRLRuntimeError(
-                "switch: both channels must be unitary (E-Switch-Coherent)",
-                t.line, t.col,
-            )
         qs = QuantumSwitch(channel_A=f.cptp, channel_B=g.cptp)
         # Switch(d) denotes the construct; the control is P's input when it runs.
         return Process(qs.process_matrix(), source=qs, control=control.rho)

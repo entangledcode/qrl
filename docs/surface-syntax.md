@@ -73,15 +73,15 @@ comment    ::= "--" ... end-of-line
 | T-Ask        | `ask(t, q)`                  | `Outcome * Rel(n)` |
 | T-Tensor     | `t1 * t2`                    | `τ1 * τ2` |
 | T-UniProc    | `cptp(U)`, `U†U = I`         | `UniProc(d)` |
-| T-Switch     | `switch(f, g, c)`, `f,g : UniProc(d)`, `c : Qubit` | `Switch(d)` |
+| T-Switch     | `switch(f, g, c)`, `f,g : Proc(d, d)`, `c : Qubit` | `Switch(d)` |
 | T-Seq        | `t1 ; t2`                    | `Proc(d1, d3)` |
-| T-PM         | `pm(W, p)`, `W ≥ 0`, `Tr[W] = dⁿ` | `PM(n, d)` |
+| T-PM         | `pm(W, p)`, `W ≥ 0`, `Tr[W] = dⁿ`, `L_V(W) = W` | `PM(n, d)` |
 | T-DAG        | `dag(V, E, Φ)`, `(V,E)` acyclic | `CausalDAG(\|V\|)` |
 | T-Do         | `do(g, x, ρ)`, `x ∈ V(g)`    | `Outcome` |
 
 Subtyping: `UniProc(d) <: Proc(d, d)` (a unitary channel is a channel); tensor is
 covariant. Nothing coerces *into* `Switch(d)` — that is what makes Theorem 1
-(QuantumSwitch Soundness) enforceable at the type level.
+(Switch Soundness) enforceable at the type level.
 
 ### Why `cptp` splits into two rules
 
@@ -89,19 +89,21 @@ covariant. Nothing coerces *into* `Switch(d)` — that is what makes Theorem 1
 `cptp(K1, ..., Km)` forming a trace-preserving map types as `Proc(d, d)`.
 A non-trace-preserving argument is a type error.
 
-`switch` demands `UniProc` on both channel arguments. A switch over a
-non-unitary channel reduces (rule E-Switch-Incoherent) to an incoherent
-classical mixture of causal orders — causally *separable* — so it must not
-inhabit `Switch(d)`. `examples/lang/switch_rejected.qrl` is the canonical
-rejected program.
+`switch` accepts any channels of type `Proc(d, d)`. `Switch(d)` denotes the
+switch construct (parties P, A, B, F), which does not depend on the channels
+plugged into it, so a switch over a non-unitary channel is still certified
+(`examples/lang/switch_channels.qrl`). Running it uses the Kraus form of the
+switch; coherence between the orders survives in general (Ebler, Salek,
+Chiribella 2018). `examples/lang/pm_loop.qrl` is the canonical rejected
+program: a causal loop fails T-PM.
 
 ## Numeric side-conditions
 
-Checked with numpy at tolerance 1e-6: `U†U = I` (T-UniProc), Hermiticity +
-positive-semidefiniteness + `Tr[W] = dⁿ` (T-PM), density-matrix conditions
-(T-Do). The full Araújo structural-projector validity of a process matrix
-(`Tr_out W = I_in` as an operator identity) is delegated to
-`qrl.causal.ProcessMatrix` at run time.
+Checked with numpy at tolerance 1e-6: `U†U = I` (T-UniProc); for T-PM,
+Hermiticity, positive-semidefiniteness, `Tr[W] = dⁿ` and the no-causal-loop
+condition `L_V(W) = W` (Araújo et al. 2015, Sec. II B), via
+`qrl.causal.ProcessMatrix.satisfies_no_loop_condition`; density-matrix
+conditions (T-Do).
 
 ## Execution status
 
@@ -121,8 +123,8 @@ positive-semidefiniteness + `Tr[W] = dⁿ` (T-PM), density-matrix conditions
 - **`do(g, x, ρ)`** → intervene `x := ρ`, propagate through the DAG, sample a
   Z-basis outcome on the unique sink node.
 
-E-Switch-Incoherent is not implemented and cannot be reached: `switch` requires
-`UniProc` channels, so a well-typed `switch` is always coherent.
+`switch(f, g, c)` evaluates to the switch construct with its channels and
+control (rule E-Switch); the construct's process matrix does not depend on them.
 
 ## Not yet covered
 

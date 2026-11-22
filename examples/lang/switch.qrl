@@ -1,7 +1,7 @@
 -- The quantum switch: the canonical causally nonseparable process.
 --
--- Both operations are unitary (X and Z), so switch(...) type-checks as
--- Switch(2): the switch construct, with the control (here |+>) as its input.
+-- switch(...) type-checks as Switch(2): the switch construct, with the control
+-- (here |+>) as its input.  Any channels work (see switch_channels.qrl).
 -- qrl exec certifies the construct with a measurable causal witness (Araujo
 -- et al. 2015): a past party P prepares the control (six states), A and B
 -- apply ten unitaries, F measures the control.  Every causally separable

@@ -100,13 +100,13 @@ def test_t_switch_coherent():
     assert ty(src) == T.Switch(2)
 
 
-def test_t_switch_rejects_non_unitary_channel():
+def test_t_switch_accepts_non_unitary_channel():
+    # Switch(d) denotes the construct, which does not depend on the channels
     src = """
         let K = cptp([[1, 0], [0, 0]], [[0, 0], [0, 1]]) in
         switch(K, K, |+>)
     """
-    with pytest.raises(QRLTypeError):
-        ty(src)
+    assert ty(src) == T.Switch(2)
 
 
 def test_t_switch_rejects_dim_mismatch():
@@ -207,13 +207,21 @@ def test_t_do_rejects_non_density_matrix():
 # ---- soundness-relevant end-to-end ---------------------------------
 
 def test_switch_soundness_boundary():
-    """The type system's whole job: unitary -> Switch(2); CPTP -> not."""
-    good = "let U = cptp([[1, 0], [0, -1]]) in switch(U, U, |0>)"
-    bad = ("let U = cptp([[1, 0], [0, 0]], [[0, 1], [0, 0]]) in "
-           "switch(U, U, |0>)")
-    assert ty(good) == T.Switch(2)
+    """T-Switch takes any channels Proc(d, d); only non-channels are rejected."""
+    unitary = "let U = cptp([[1, 0], [0, -1]]) in switch(U, U, |0>)"
+    damping = ("let U = cptp([[1, 0], [0, 0]], [[0, 1], [0, 0]]) in "
+               "switch(U, U, |0>)")
+    assert ty(unitary) == T.Switch(2)
+    assert ty(damping) == T.Switch(2)
     with pytest.raises(QRLTypeError):
-        ty(bad)
+        ty("switch(|0>, |0>, |+>)")
+
+
+def test_t_pm_rejects_causal_loop():
+    # A's output wired back to A's input: positive, Tr W = d, but not a process
+    src = "pm([[1, 0, 0, 1], [0, 0, 0, 0], [0, 0, 0, 0], [1, 0, 0, 1]], [1])"
+    with pytest.raises(QRLTypeError, match="no-causal-loop"):
+        ty(src)
 
 
 def test_error_message_has_source_caret():

@@ -1,0 +1,10 @@
+-- This program is REJECTED by the type checker.
+--
+-- W wires party A's output straight back into A's own input.  It is positive
+-- and has the right trace, but it is not a process matrix: if A applies a
+-- bit flip, the probabilities do not sum to 1 (a causal loop).  T-PM checks
+-- the no-causal-loop condition L_V(W) = W, so the term has no type.
+--
+--   qrl check examples/lang/pm_loop.qrl   ->   type error (expected)
+
+pm([[1, 0, 0, 1], [0, 0, 0, 0], [0, 0, 0, 0], [1, 0, 0, 1]], [1])

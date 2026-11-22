@@ -5,7 +5,7 @@ Covers:
   - Construction and validation
   - switch_unitary() isometry
   - apply() coherent switch (unitary channels)
-  - apply() incoherent switch (CPTP channels)
+  - apply() for general CPTP channels: the switch in Kraus form
   - apply_and_trace_control()
   - causal_inequality_value() is None (the switch cannot win a causal game)
   - causal witness of the switch construct: -0.1694
@@ -241,33 +241,66 @@ def test_apply_accepts_density_matrix_inputs():
 
 
 # ================================================================== #
-# apply() — incoherent switch (CPTP channels)                          #
+# apply() — general CPTP channels (Kraus form of the switch)           #
 # ================================================================== #
+# Ordering is target ⊗ control: index = 2 * target + control.
 
-def test_apply_incoherent_control_zero_gives_BA_only():
-    """Incoherent switch, control |0⟩: only B∘A contributes."""
-    sw = QuantumSwitch(channel_A=depolarizing_channel(0.5),
-                       channel_B=dephasing_channel(0.3))
+def _control_block(rho, c):
+    idx = [2 * t + c for t in range(rho.shape[0] // 2)]
+    return rho[np.ix_(idx, idx)]
+
+
+def test_apply_cptp_control_zero_gives_BA_only():
+    """Control |0⟩: only the order A then B (B∘A) contributes."""
+    A, B = depolarizing_channel(0.5), dephasing_channel(0.3)
+    sw = QuantumSwitch(channel_A=A, channel_B=B)
     result = sw.apply(zero, zero)
     assert result.shape == (4, 4)
-    # Lower block (control=1 branch) should be zero since p1=0
-    assert np.allclose(result[2:, 2:], np.zeros((2, 2)), atol=1e-10)
+    assert np.allclose(_control_block(result, 1), 0, atol=1e-10)
+    assert np.allclose(_control_block(result, 0), B.apply(A.apply(zero)), atol=1e-10)
 
 
-def test_apply_incoherent_is_valid_density_matrix():
+def test_apply_cptp_is_valid_density_matrix():
     sw = QuantumSwitch(channel_A=depolarizing_channel(0.3),
                        channel_B=dephasing_channel(0.5))
     result = sw.apply(plus, plus)
-    assert np.isclose(np.trace(result).real, 1.0, atol=1e-8)
+    assert _is_density_matrix(result)
 
 
-def test_apply_incoherent_no_off_diagonal_coherence():
-    """Incoherent switch has no cross-block coherences (block-diagonal output)."""
-    sw = QuantumSwitch(channel_A=depolarizing_channel(0.5),
-                       channel_B=dephasing_channel(0.3))
-    result = sw.apply(zero, plus)
-    off_diag = result[:2, 2:]
-    assert np.allclose(off_diag, np.zeros((2, 2)), atol=1e-10)
+def test_apply_cptp_matches_coherent_switch_for_unitaries():
+    sw = QuantumSwitch(channel_A=_phi_X(), channel_B=_phi_Z())
+    assert np.allclose(sw._apply_kraus(plus, plus), sw._apply_coherent(plus, plus),
+                       atol=1e-12)
+
+
+def test_apply_cptp_independent_of_kraus_decomposition():
+    """Mixing the Kraus operators by a unitary leaves the output unchanged."""
+    A = depolarizing_channel(0.4)
+    rng = np.random.default_rng(1)
+    z = rng.normal(size=(4, 4)) + 1j * rng.normal(size=(4, 4))
+    u, _ = np.linalg.qr(z)
+    A2 = CPTPMap(kraus_ops=[sum(u[i, k] * A.kraus_ops[k] for k in range(4))
+                            for i in range(4)], input_dim=2, output_dim=2)
+    B = dephasing_channel(0.2)
+    out1 = QuantumSwitch(channel_A=A, channel_B=B).apply(plus, plus)
+    out2 = QuantumSwitch(channel_A=A2, channel_B=B).apply(plus, plus)
+    assert np.allclose(out1, out2, atol=1e-10)
+
+
+def test_switch_of_depolarising_channels_keeps_order_coherence():
+    """Ebler, Salek, Chiribella (PRL 2018): the switch of two completely
+    depolarising channels is not an incoherent mixture of orders. With
+    control |+>, the control keeps coherence 1/(2 d^2) = 1/8 after tracing out
+    the target (an incoherent mixture would give 0), and the output depends on
+    the input."""
+    D = depolarizing_channel(1.0)
+    sw = QuantumSwitch(channel_A=D, channel_B=D)
+    out = sw.apply(zero, plus)
+    rho_c = out.reshape(2, 2, 2, 2).trace(axis1=0, axis2=2)   # trace out target
+    assert np.isclose(abs(rho_c[0, 1]), 1 / 8, atol=1e-10)
+    # the target-control correlation carries the input: |0> and |1> differ
+    one = np.array([0, 1], dtype=complex)
+    assert not np.allclose(sw.apply(zero, plus), sw.apply(one, plus), atol=1e-6)
 
 
 # ================================================================== #
@@ -334,10 +367,10 @@ def test_process_matrix_does_not_depend_on_control_or_unitaries():
     assert np.allclose(a.W, b.W)
 
 
-def test_is_causally_separable_true_for_non_unitary():
-    """Non-unitary channels use the incoherent (classically mixed) semantics."""
+def test_is_causally_separable_false_for_non_unitary():
+    """The construct does not depend on the channels plugged into it."""
     sw = QuantumSwitch(channel_A=depolarizing_channel(0.5), channel_B=_phi_Z())
-    assert sw.is_causally_separable() is True
+    assert sw.is_causally_separable() is False
 
 
 def test_is_causally_separable_false():
@@ -409,10 +442,12 @@ def test_process_matrix_has_rank_two():
     assert len(nonzero) == 2
 
 
-def test_process_matrix_raises_for_non_unitary():
+def test_process_matrix_is_the_construct_for_non_unitary():
+    """The construct does not depend on the channels plugged into it."""
     sw = QuantumSwitch(channel_A=depolarizing_channel(0.5), channel_B=_phi_Z())
-    with pytest.raises(NotImplementedError):
-        sw.process_matrix()
+    ref = QuantumSwitch(channel_A=_phi_X(), channel_B=_phi_Z())
+    assert np.allclose(sw.process_matrix().W, ref.process_matrix().W)
+    assert sw.process_matrix().is_valid()
 
 
 def test_process_matrix_identity_switch():

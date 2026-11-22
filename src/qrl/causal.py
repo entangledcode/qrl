@@ -1186,9 +1186,16 @@ class QuantumSwitch:
 
         ρ_out = V (ρ_T ⊗ ρ_C) V†
 
-    For general CPTP channels the coherence between the two orders is lost
-    (decoherence destroys the indefinite causal structure); apply() falls back
-    to an incoherent mixture weighted by the control state's diagonal.
+    For general CPTP channels with Kraus operators {A_i} and {B_j}, the switch
+    acts as
+
+        ρ_out = Σ_ij K_ij (ρ_T ⊗ ρ_C) K_ij†,
+        K_ij  = (B_j A_i) ⊗ |0⟩⟨0|_C  +  (A_i B_j) ⊗ |1⟩⟨1|_C
+
+    (Chiribella, D'Ariano, Perinotti, Valiron 2013), independently of the
+    choice of Kraus operators.  Coherence between the two orders survives in
+    general: the switch of two completely depolarising channels still
+    transmits information (Ebler, Salek, Chiribella 2018).
 
     Causal properties
     -----------------
@@ -1306,11 +1313,12 @@ class QuantumSwitch:
         where V is the switch isometry.  The control qubit is preserved in
         the output — trace it out with apply_and_trace_control() if needed.
 
-        For **general CPTP** channels: performs the incoherent switch.
-        The two causal orders are applied as a classical mixture weighted
-        by the control qubit's diagonal (decoherence destroys the
-        indefinite-order coherence).  This is physically correct but loses
-        the causal non-separability signature.
+        For **general CPTP** channels: performs the switch in Kraus form,
+
+            ρ_out = Σ_ij K_ij (ρ_T ⊗ ρ_C) K_ij†,
+            K_ij  = (B_j A_i) ⊗ |0⟩⟨0| + (A_i B_j) ⊗ |1⟩⟨1|,
+
+        which does not depend on the choice of Kraus operators.
 
         Args:
             target_state:  State vector (d,) or density matrix (d, d).
@@ -1321,7 +1329,7 @@ class QuantumSwitch:
         """
         if self.is_unitary():
             return self._apply_coherent(target_state, control_state)
-        return self._apply_incoherent(target_state, control_state)
+        return self._apply_kraus(target_state, control_state)
 
     def apply_and_trace_control(
         self,
@@ -1361,31 +1369,29 @@ class QuantumSwitch:
         rho_TC = np.kron(_to_density(target_state), _to_density(control_state))
         return V @ rho_TC @ V.conj().T
 
-    def _apply_incoherent(
+    def _apply_kraus(
         self,
         target_state: np.ndarray,
         control_state: np.ndarray,
     ) -> np.ndarray:
         """
-        Incoherent switch for general CPTP maps.
+        Quantum switch of general CPTP maps, in Kraus form:
 
-        Applies B∘A with weight p0 = ⟨0|ρ_C|0⟩ and A∘B with weight
-        p1 = ⟨1|ρ_C|1⟩.  Off-diagonal coherences of ρ_C are discarded
-        (they require the unitary/coherent path to be meaningful).
+            ρ_out = Σ_ij K_ij (ρ_T ⊗ ρ_C) K_ij†,
+            K_ij  = (B_j A_i) ⊗ |0⟩⟨0| + (A_i B_j) ⊗ |1⟩⟨1|.
+
+        K_ij is bilinear in (A_i, B_j), so the output does not depend on the
+        Kraus decompositions chosen for A and B.
         """
-        rho_T = _to_density(target_state)
-        rho_C = _to_density(control_state)
-        p0 = float(rho_C[0, 0].real)
-        p1 = float(rho_C[1, 1].real)
-
-        rho_BA = self.channel_B.apply(self.channel_A.apply(rho_T))
-        rho_AB = self.channel_A.apply(self.channel_B.apply(rho_T))
-
-        d = rho_T.shape[0]
-        result = np.zeros((2 * d, 2 * d), dtype=complex)
-        result[:d, :d] = p0 * rho_BA
-        result[d:, d:] = p1 * rho_AB
-        return result
+        rho = np.kron(_to_density(target_state), _to_density(control_state))
+        P0 = np.diag([1.0, 0.0]).astype(complex)
+        P1 = np.diag([0.0, 1.0]).astype(complex)
+        out = np.zeros_like(rho, dtype=complex)
+        for A in self.channel_A.kraus_ops:
+            for B in self.channel_B.kraus_ops:
+                K = np.kron(B @ A, P0) + np.kron(A @ B, P1)
+                out += K @ rho @ K.conj().T
+        return out
 
     # ------------------------------------------------------------------ #
     # Causal properties                                                    #
@@ -1436,16 +1442,10 @@ class QuantumSwitch:
         """
         Whether the switch construct is causally separable.
 
-        For unitary channels this computes the witness value: a negative value
-        certifies nonseparability.  A non-negative value would not prove
-        separability, so True is only returned conservatively.
-
-        Non-unitary channels follow QRL's incoherent semantics
-        (E-Switch-Incoherent): the orders are mixed classically, which is
-        causally separable.
+        The construct does not depend on the channels plugged into it, so the
+        answer is the same for unitary and general CPTP channels: the shipped
+        witness certifies nonseparability (value -0.1694 < 0).
         """
-        if not self.is_unitary():
-            return True
         if self.target_dim != 2:
             raise NotImplementedError("the shipped witness is for a qubit target")
         return not self.witness_certificate().certifies(self.process_matrix())
@@ -1468,19 +1468,13 @@ class QuantumSwitch:
         Args:
             target: Target input state (default |0>).
 
+        The construct does not depend on the channels plugged into it, so
+        this is the same for unitary and general CPTP channels.
+
         Returns:
             ProcessMatrix with parties ['P', 'A', 'B', 'F'],
             input_dims [1, d, d, 2], output_dims [2, d, d, 1].
-
-        Raises:
-            NotImplementedError: If either channel is not unitary (QRL's
-                coherent switch requires unitaries, rule T-Switch).
         """
-        if not self.is_unitary():
-            raise NotImplementedError(
-                "process_matrix() is only implemented for unitary channels; "
-                "use apply() directly for general CPTP maps"
-            )
         from qrl.switch_witness import switch_process
         return switch_process(d=self.target_dim, target=target)
 

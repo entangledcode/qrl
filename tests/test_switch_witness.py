@@ -12,6 +12,7 @@ Covers:
     including complex targets, controls and unitaries (Choi convention)
   - witness value -0.1694 on the construct; real operator
   - witness >= 0 on random causally ordered processes (P<A<B<F, P<B<A<F, mixtures)
+    and on processes where P's output classically chooses the order (QC-CC)
   - classical switch (dephased control wire) is not certified
   - noise tolerance, evaluate() from frequencies
 """
@@ -188,6 +189,46 @@ def test_witness_nonnegative_on_random_ordered_processes():
         q = rng.uniform()
         W = q * _random_ordered_process("A") + (1 - q) * _random_ordered_process("B")
         assert np.trace(S @ W).real >= -1e-9
+
+
+def _random_p_controlled_process(basis):
+    """P's output is measured in `basis`; outcome 0 puts A first, outcome 1
+    puts B first (classically controlled order, QC-CC). Causally separable in
+    the multipartite sense, but outside the sum of the two fixed-order cones."""
+    def branch(first):
+        V0 = _haar(4)[:, :1].reshape(2, 2)               # [x_in, M]
+        V1 = _haar(4).reshape(2, 2, 2, 2)                # [y_in, M', x_out, M]
+        V2 = _haar(4).reshape(2, 2, 2, 2)                # [F, junk, y_out, M']
+        w = np.einsum("am,qnbm,fjcn->abqcfj", V0, V1, V2)  # x_in x_out y_in y_out F junk
+        if first == "B":
+            w = w.transpose(2, 3, 0, 1, 4, 5)
+        w = w.reshape(32, 2)
+        return w @ w.conj().T                            # A_I A_O B_I B_O F
+    W = 0
+    for x, first in ((0, "A"), (1, "B")):
+        e = basis[:, x]
+        W = W + np.kron(np.outer(e, e.conj()).conj(), branch(first))
+    return W
+
+
+def test_random_p_controlled_processes_are_valid():
+    W = _random_p_controlled_process(_haar(2))
+    assert np.isclose(np.trace(W).real, 8.0)
+    assert np.linalg.eigvalsh(W).min() > -1e-10
+    probs = switch_witness().probabilities(W)
+    for p, a, b in switch_witness().settings[:20]:
+        assert np.isclose(probs[(p, a, b, "+")] + probs[(p, a, b, "-")], 1.0, atol=1e-10)
+
+
+def test_witness_nonnegative_when_p_chooses_the_order():
+    # Minimising the witness over all such processes by SDP gives 0 (to solver
+    # tolerance, 1e-6), so the witness stays valid; random samples sit well above it.
+    S = switch_witness().operator()
+    bases = [np.eye(2), np.array([[1, 1], [1, -1]]) / np.sqrt(2)]
+    for _ in range(100):
+        bases.append(_haar(2))
+    for basis in bases:
+        assert np.trace(S @ _random_p_controlled_process(basis)).real >= -1e-9
 
 
 # ------------------------------------------------------------------ #

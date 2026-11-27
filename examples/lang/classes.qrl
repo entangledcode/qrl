@@ -1,4 +1,4 @@
--- Refinement types for process matrices: QCFO <: QCCC <: QCQC <: PM(2, d).
+-- Refinement types for process matrices: QCFO <: QCCC <: QCQC (from PM(2, d) via T-Refine).
 --
 -- A pm(...) literal annotated with a class gets that type only if a
 -- certificate checks (qrl.causal_classes; Wechs et al. 2021).  This one is

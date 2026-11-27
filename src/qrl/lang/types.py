@@ -94,13 +94,17 @@ class CausalDAG(Type):
 
 @dataclass(frozen=True)
 class CausalClass(Type):
-    """A refinement of two-slot process matrices (slots of dimension d):
+    """A causal class of two-slot processes (slots A, B of dimension d) with a
+    global past P and a global future F, as in Wechs et al. 2021:
 
-        QCFO(d) <= QCCC(d) <= QCQC(d) <= PM(2, d)    (Wechs et al. 2021)
-        Noncausal(d) <= PM(2, d)                     (outside QC-QC)
+        QCFO(d) <= QCCC(d) <= QCQC(d)                (certificates convert upward)
+        Noncausal(d)                                 (outside QC-QC)
+        Switch(d) <= QCQC(d)
 
-    A value gets one of these types only with a certificate that checks
-    (qrl.causal_classes)."""
+    P and F may be trivial (a pm literal) or not (the switch: P, A, B, F with
+    input dims [1, d, d, 2]), so a class type is NOT a subtype of PM(2, d),
+    whose values have trivial P and F.  A class value enters from PM(2, d)
+    only through T-Refine, which checks a certificate (qrl.causal_classes)."""
     kind: str          # "QCFO" | "QCCC" | "QCQC" | "Noncausal"
     d: int
 
@@ -111,27 +115,39 @@ class CausalClass(Type):
 _CHAIN = ("QCFO", "QCCC", "QCQC")
 
 
+def _direct_supertypes(t: Type):
+    """One-step subtyping edges.  is_subtype is their reflexive-transitive
+    closure (plus covariant Tensor), so it is transitive by construction."""
+    if isinstance(t, UniProc):
+        yield Proc(t.d, t.d)
+    elif isinstance(t, Switch):
+        yield CausalClass("QCQC", t.d)
+    elif isinstance(t, CausalClass) and t.kind in _CHAIN:
+        k = _CHAIN.index(t.kind)
+        if k + 1 < len(_CHAIN):
+            yield CausalClass(_CHAIN[k + 1], t.d)
+
+
 def is_subtype(sub: Type, sup: Type) -> bool:
     """Subtyping:
 
         UniProc(d)  <=  Proc(d, d)                 (a unitary channel is a channel)
-        QCFO(d) <= QCCC(d) <= QCQC(d) <= PM(2, d)  (certificates convert upward)
-        Noncausal(d)  <=  PM(2, d)
+        QCFO(d) <= QCCC(d) <= QCQC(d)              (certificates convert upward)
         Switch(d)  <=  QCQC(d)                     (closed-form certificate)
 
-    Tensor is covariant.
+    No class type is a subtype of PM(2, d): see CausalClass.  Tensor is
+    covariant.  The relation is the reflexive-transitive closure of
+    _direct_supertypes, hence transitive.
     """
-    if sub == sup:
-        return True
-    if isinstance(sub, UniProc) and isinstance(sup, Proc):
-        return sup.d_in == sub.d and sup.d_out == sub.d
-    if isinstance(sub, CausalClass) and isinstance(sup, PM):
-        return sup.n == 2 and sup.d == sub.d
-    if isinstance(sub, CausalClass) and isinstance(sup, CausalClass):
-        return (sub.d == sup.d and sub.kind in _CHAIN and sup.kind in _CHAIN
-                and _CHAIN.index(sub.kind) <= _CHAIN.index(sup.kind))
-    if isinstance(sub, Switch) and isinstance(sup, CausalClass):
-        return sup.kind == "QCQC" and sup.d == sub.d
     if isinstance(sub, Tensor) and isinstance(sup, Tensor):
         return is_subtype(sub.left, sup.left) and is_subtype(sub.right, sup.right)
+    seen, todo = set(), [sub]
+    while todo:
+        t = todo.pop()
+        if t == sup:
+            return True
+        if t in seen:
+            continue
+        seen.add(t)
+        todo.extend(_direct_supertypes(t))
     return False

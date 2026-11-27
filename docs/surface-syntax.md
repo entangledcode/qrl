@@ -81,10 +81,13 @@ comment    ::= "--" ... end-of-line
 | T-Do         | `do(g, x, ρ)`, `x ∈ V(g)`    | `Outcome` |
 
 Subtyping: `UniProc(d) <: Proc(d, d)` (a unitary channel is a channel);
-`QCFO(d) <: QCCC(d) <: QCQC(d) <: PM(2, d)` and `Noncausal(d) <: PM(2, d)`
-(refinement classes of two-slot processes, Wechs et al. 2021; certificates
-convert upward); `Switch(d) <: QCQC(d)` (closed-form certificate); tensor is
-covariant.
+`QCFO(d) <: QCCC(d) <: QCQC(d)` (causal classes of two-slot processes with a
+global past and future, Wechs et al. 2021; certificates convert upward);
+`Switch(d) <: QCQC(d)` (closed-form certificate); tensor is covariant. The
+relation is transitive. Class types are **not** subtypes of `PM(2, d)`: a
+`PM(2, d)` value has trivial past and future (16×16 at d = 2), while the switch
+is a four-party process (P, A, B, F; 64×64 at d = 2). A class value comes from
+`PM(2, d)` only through T-Refine.
 
 T-Refine finds and checks a certificate (`qrl.causal_classes`). QCFO is decided
 directly; a fixed-order certificate converts up to QCCC and QCQC without a

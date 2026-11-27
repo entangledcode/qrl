@@ -260,8 +260,8 @@ def test_t_refine_converts_up_the_chain_without_a_solver():
 
 
 def test_refinement_subsumption():
-    src = f"let W : QCFO(2) = {_fo_lit()} in let V : QCQC(2) = W in let U : PM(2, 2) = V in U"
-    assert ty(src) == T.PM(2, 2)
+    src = f"let W : QCFO(2) = {_fo_lit()} in let V : QCQC(2) = W in V"
+    assert ty(src) == T.CausalClass("QCQC", 2)
     with pytest.raises(QRLTypeError):          # no downcast
         ty(f"let W : QCQC(2) = {_fo_lit()} in let V : QCFO(2) = W in V")
 
@@ -283,3 +283,52 @@ def test_ocb_process_is_noncausal_and_nothing_else():
 def test_noncausal_rejects_a_causal_process():
     with pytest.raises(QRLTypeError, match="causal bound"):
         ty(f"let W : Noncausal(2) = {_fo_lit()} in W")
+
+
+# ------------------------------------------------------------------ #
+# Regression: class types are not PM(2, d) (review 2026-11-27, item 3)
+# The switch is a 4-party process (64x64, trace 8 at d = 2); PM(2, 2)
+# values are 16x16 with trace 4.  Switch(2) <: QCQC(2) <: PM(2, 2) used to
+# typecheck through an intermediate let, though the direct path failed.
+# ------------------------------------------------------------------ #
+
+_X = "let X = cptp([[0, 1], [1, 0]]) in "
+
+
+def test_switch_not_pm_direct():
+    with pytest.raises(QRLTypeError, match="annotation mismatch"):
+        ty(_X + "let S : PM(2, 2) = switch(X, X, |+>) in S")
+
+
+def test_switch_not_pm_through_qcqc():
+    with pytest.raises(QRLTypeError, match="annotation mismatch"):
+        ty(_X + "let S : QCQC(2) = switch(X, X, |+>) in let P : PM(2, 2) = S in P")
+
+
+@pytest.mark.parametrize("k", ["QCFO", "QCCC", "QCQC"])
+def test_class_not_pm(k):
+    with pytest.raises(QRLTypeError, match="annotation mismatch"):
+        ty(f"let W : {k}(2) = {_fo_lit()} in let U : PM(2, 2) = W in U")
+
+
+def test_noncausal_not_pm():
+    with pytest.raises(QRLTypeError, match="annotation mismatch"):
+        ty(f"let O : Noncausal(2) = {_ocb_lit()} in let U : PM(2, 2) = O in U")
+
+
+def test_switch_value_shape_is_not_pm22():
+    """Why the edge is unsound: the switch's process does not have PM(2, 2)'s shape."""
+    from qrl.switch_witness import switch_process
+    W = switch_process(2).W
+    assert W.shape == (64, 64) and np.isclose(np.trace(W).real, 8)
+
+
+def test_subtyping_is_transitive():
+    types = [T.Switch(2), T.CausalClass("QCFO", 2), T.CausalClass("QCCC", 2),
+             T.CausalClass("QCQC", 2), T.CausalClass("Noncausal", 2), T.PM(2, 2),
+             T.UniProc(2), T.Proc(2, 2), T.Qubit()]
+    for a in types:
+        for b in types:
+            for c in types:
+                if T.is_subtype(a, b) and T.is_subtype(b, c):
+                    assert T.is_subtype(a, c), (a, b, c)

@@ -27,7 +27,8 @@ from .errors import QRLTypeError
 _TOL = 1e-9
 
 # Observable names available in the initial environment (typed Ques).
-_OBSERVABLES = {"Z", "X", "Y", "H", "S", "T"}
+# Must match qrl.lang.interp._OBSERVABLES (Progress: every name typed Ques evaluates).
+_OBSERVABLES = {"Z", "X", "Y", "H"}
 
 
 class Env:

@@ -82,6 +82,15 @@ class Pair(Value):
 
 
 @dataclass
+class Observable(Value):
+    """A measurement basis (type Ques): one of the names in _OBSERVABLES."""
+    name: str
+
+    def __str__(self) -> str:
+        return f"Observable({self.name})"
+
+
+@dataclass
 class Channel(Value):
     """A CPTP channel — `qrl.causal.CPTPMap`.  Unitary iff a single unitary Kraus."""
     cptp: object
@@ -183,8 +192,8 @@ _OBSERVABLES: Dict[str, List[np.ndarray]] = {
     "X": [_proj(_KET_VEC["+"]), _proj(_MINUS)],
     "Y": [_proj(_IPLUS), _proj(_IMINUS)],
 }
-# H, S, T are seeded as Ques by the checker but are gates, not observables here;
-# measuring in "the H basis" is the X basis.
+# Measuring in "the H basis" is the X basis.  The checker types exactly these
+# names as Ques (qrl.lang.typecheck._OBSERVABLES); keep the two sets equal.
 _OBSERVABLES["H"] = _OBSERVABLES["X"]
 
 
@@ -307,6 +316,8 @@ class Interp:
 
     def _ev_Var(self, t: ast.Var, env: _Env) -> Value:
         v = env.lookup(t.name)
+        if v is None and t.name in _OBSERVABLES:
+            return Observable(t.name)      # the prelude: observables are constants
         if v is None:
             raise QRLRuntimeError(f"unbound variable {t.name!r} at run time",
                                   t.line, t.col)
@@ -331,7 +342,7 @@ class Interp:
         if not isinstance(rel, QState):
             raise QRLRuntimeError("ask: argument did not evaluate to a state",
                                   t.relation.line, t.relation.col)
-        obs = self._observable_name(t.question)
+        obs = self._observable_name(self.eval(t.question, env), t.question)
         probs = _measure_probs(rel.rho, obs, k=0)
         m = int(self.rng.choice(len(probs), p=probs))
         post = _post_state(rel.rho, obs, k=0, m=m)
@@ -341,11 +352,8 @@ class Interp:
         a = self.eval(t.left, env)
         b = self.eval(t.right, env)
         if isinstance(a, QState) and isinstance(b, QState):
-            return QState(np.kron(a.rho, b.rho))
-        raise QRLRuntimeError(
-            "tensor is currently supported only for states (QState * QState)",
-            t.line, t.col,
-        )
+            return QState(np.kron(a.rho, b.rho))   # a pair of states is their product
+        return Pair(a, b)                          # any other pair of values
 
     # ---- causal stratum (unitary path) -------------------------
     def _ev_Cptp(self, t: ast.Cptp, env: _Env) -> Value:
@@ -472,12 +480,11 @@ class Interp:
 
     # ---- helpers --------------------------------------------------
     @staticmethod
-    def _observable_name(q: ast.Term) -> str:
-        if isinstance(q, ast.Var) and q.name in _OBSERVABLES:
-            return q.name
-        name = getattr(q, "name", type(q).__name__)
+    def _observable_name(v: Value, q: ast.Term) -> str:
+        if isinstance(v, Observable):
+            return v.name
         raise QRLRuntimeError(
-            f"ask: {name!r} is not a measurable observable "
+            f"ask: {v} is not a measurable observable "
             f"(known: {', '.join(sorted(_OBSERVABLES))})",
             q.line, q.col,
         )
@@ -528,7 +535,7 @@ def distribution(src: str) -> Dict[int, float]:
     if not isinstance(rel, QState):
         raise QRLRuntimeError("ask: argument did not evaluate to a state",
                               tree.relation.line, tree.relation.col)
-    obs = Interp._observable_name(tree.question)
+    obs = Interp._observable_name(interp.eval(tree.question, env), tree.question)
     probs = _measure_probs(rel.rho, obs, k=0)
     return {m: float(p) for m, p in enumerate(probs)}
 
